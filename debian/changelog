@@ -1,6 +1,6 @@
 xmount (0.3.1-1) stable; urgency=low
 
-  * Initial release. [Closes: #TODO]
+  * Initial release. [Closes: #536493]
   * Packaging based on work by upstream author,
     Gillen Daniel <gillen.dan@pinguin.lu>.
 
