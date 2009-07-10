@@ -1,0 +1,14 @@
+This file lists upcomming changes to xmount.
+
+Upcomming changes for version x.y.z:
+  - Support for AFF input images
+
+Upcomming changes for version 0.3.2:
+  - ( ) Enable caching of VMDK files
+
+Upcomming changes for version 0.3.1:
+  - ( ) Enable caching of VMDK files
+
+Upcomming changes for version 0.3.0:
+  - (X) New cache file format (Mandatory to support new virtual formats)
+  - (X) Support for VMWare VMDK files

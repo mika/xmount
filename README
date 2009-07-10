@@ -1,0 +1,140 @@
+XMOUNT README FILE
+
+Table of contents
+  0.0 Author and license stuff
+  1.0 What is xmount? - A short description
+  2.0 A deeper view of things
+    2.1 Emulated DD file
+    2.2 Emulated VDI file
+    2.3 Emulated VMDK file
+    2.4 Virtual write access
+  3.0 Installation instructions
+    3.1 Prerequisits
+    3.1 Install from a package
+    3.2 Install from source
+  4.0 xmount command line parameters
+    4.1 xmount usage examples
+
+0.0 Author and license stuff
+  xmount Copyright (c) 2008,2009 by Gillen Daniel <gillen.dan@pinguin.lu>
+
+  This program is free software: you can redistribute it and/or modify it under
+  the terms of the GNU General Public License as published by the Free Software
+  Foundation, either version 3 of the License, or (at your option) any later
+  version.
+
+  This program is distributed in the hope that it will be useful, but WITHOUT
+  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+  FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License along with
+  this program. If not, see <http://www.gnu.org/licenses/>.
+
+1.0 What is xmount? - A short description
+  xmount allows you to convert on-the-fly between multiple input and output
+  image types. xmount creates a virtual file system using FUSE (Filesystem in
+  Userspace) that contains a virtual representation of the input image. The
+  virtual representation can be in raw DD or in VirtualBox's virtual disk file
+  format. Input images can be raw DD or EWF (Expert Witness Compression Format)
+  files. In addition, xmount also supports virtual write access to the output
+  files that is redirected to a cache file. This makes it for example possible
+  to use VirtualBox to boot an OS contained in a read-only EWF image.
+
+2.0 A deeper view of things
+  2.1 Emulated DD file
+    This is the standard data representation used by xmount. It is a file
+    containing the raw data contained in the input image file.
+
+  2.2 Emulated VDI file
+    When using the "--out vdi" command line parameter, a VirtualBox disk file
+    is emulated. This means that xmount builds a virtual VDI header and prepends
+    it to the raw data contained in the input image. The VDI file can be used in
+    VirtualBox as a virtual disk file. This makes it possible to access data
+    from image files in a virtual machine.
+
+  2.3 Emulated VMDK file
+    When using the "--out vmdk(s)" command line paramter, a VMWare virtual disk
+    file will be emulated. This mainly consists in building a VMDK descriptor
+    file that will access an emulated DD file. You can use this VMDK file to
+    add your input image as virtual disk to a VMWare virtual machine.
+
+    When emulating VMDK files to be used in VMWare, you have to enable
+    "user_allow_other" in /etc/fuse.conf and use the -o allow_other command
+    line parameter.
+
+    WARNING: VMDK support should be considered experimental and currently the
+             VMDK descriptor file isn't cached.
+
+  2.4 Virtual write access
+    By using the "--rw <cache_file>" command line parameter, xmount allows you
+    to write data to the emulated image files. All changes are written to a
+    separate cache file. No data will ever be written to the input image files.
+    Write access is limited to change existing data only. It isn't possible to
+    change the emulated image's file size! (No append or truncate)
+
+3.0 Installation instructions
+  To install xmount, you can use a prebuild package for your distribution or
+  you can build xmount from source. The two methods are described in the
+  following sections.
+
+  3.1 Prerequisits
+    FUSE:
+      Your linux distribution must support FUSE and have the apropiate libraries
+      installed. (See http://fuse.sourceforge.net/ for more informations). To be
+      able to install from source, you also need the FUSE header files.
+    LIBEWF: (If you want to have EWF input image support)
+      You must have installed libewf. To install from source, you also need the
+      appropriate header files. (See https://www.uitwisselplatform.nl/projects/
+      libewf/ for more informations)
+
+  3.2 Install from a package
+    Chances are I provide prebuild binary packages for OpenBSD (No EWF and AFF
+    support), Slackware, Debian and Ubuntu. In this case, you only have to fire
+    up your distribution's package manager and install xmount. See
+    http://www.pinguin.lu for more informations and download links.
+
+  3.3 Install from source
+    After having checked the prerequisits, you should be able to compile and
+    install xmount by simply issuing the followng three commands:
+
+    # ./configure
+    # make
+    # make install
+
+4.0 xmount command line parameters
+  xmount [[fopts] [mopts]] <ifile> [<ifile> [...]] <mntp>
+
+  fopts:
+    -d : Enable FUSE's and xmount's debug mode.
+    -s : Run single threaded.
+    -o <fmopts> : Specify fuse mount options.
+    INFO: For VMDK emulation, you have to uncomment "user_allow_other" in
+          /etc/fuse.conf and use the -o allow_root command line parameter.
+  mopts:
+    --in <itype> : Input image format. <itype> can be "dd", "ewf".
+    --info : Print out some infos about used compiler and libraries.
+    --out <otype> : Output image format. <otype> can be "dd", "vdi", "vmdk".
+    --rw <cache_file> : Enable virtual write support and set cache file to use.
+    --version : Same as --info.
+    INFO: Input and output image type defaults to "dd" if not specified.
+  ifile:
+    Input image file. If you use EWF files, you have to specify all image
+    segments!
+  mntp:
+    Mount point where virtual files should be located.
+
+  4.1 xmount usage examples
+    To xmount an EWF image from your acquired disk as a raw DD image under /mnt,
+    use the following command:
+
+      xmount --in ewf ./acquired_disk.E?? /mnt
+
+    To xmount the same ewf image as vdi file, you would use a command like this:
+
+      xmount --in ewf --output vdi ./acquired_disk.E?? /mnt
+
+    And to enable virtual write support on a raw DD input image xmounted as VDI
+    file:
+
+      xmount --out vdi --rw ./acquired_disk.cache ./acquired_disk.dd /mnt
+
