@@ -11,15 +11,15 @@ Vcs-Browser: http://git.grml.org/?p=xmount.git
 Package: xmount
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: tool to crossmount between multiple input and output image files
- xmount allows you to convert on-the-fly between multiple
- input and output image types. xmount creates a virtual file
+Description: tool to crossmount between multiple input and output harddisk images
+ xmount allows you to convert on-the-fly between multiple input
+ and output harddisk image types. xmount creates a virtual file
  system using FUSE (Filesystem in Userspace) that contains a
- virtual representation of the input image. The virtual
- representation can be in raw DD or in VirtualBox's virtual
- disk file format. Input images can be raw DD or EWF (Expert
- Witness Compression Format).  In addition, xmount also
- supports virtual write access to the output files that is
- redirected to a cache file. This makes it for example
- possible to use VirtualBox to boot an OS contained in a
- read-only EWF image.
+ virtual representation of the input harddisk image. The virtual
+ representation can be in raw DD or in VirtualBox's virtual disk
+ file format. Input harddisk images can be raw DD or EWF (Expert
+ Witness Compression Format). In addition, xmount also supports
+ virtual write access to the output files that is redirected to
+ a cache file. This makes it for example possible to use
+ VirtualBox to boot an OS contained in a read-only EWF harddisk
+ image.
