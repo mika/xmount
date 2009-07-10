@@ -71,7 +71,7 @@ binary-arch: build install
 	dh_installchangelogs ChangeLog
 	dh_installdocs
 	dh_installexamples
-	dh_installman
+	dh_installman xmount.1
 	dh_link
 	dh_strip
 	dh_compress
