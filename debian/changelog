@@ -1,8 +1,0 @@
-xmount (0.3.1-1) stable; urgency=low
-
-  * Initial release. [Closes: #TODO]
-  * Packaging based on work by upstream author,
-    Gillen Daniel <gillen.dan@pinguin.lu>.
-
- -- Michael Prokop <mika@debian.org>  Fri, 10 Jul 2009 12:25:11 +0200
-
