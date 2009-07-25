@@ -1,14 +1,20 @@
 This file lists upcomming changes to xmount.
 
-Upcomming changes for version x.y.z:
-  - Support for AFF input images
+Planned changes for version x.y.z:
+  - Support for AFF input harddisk images
+  - Stable support of VMDK files
 
-Upcomming changes for version 0.3.2:
-  - ( ) Enable caching of VMDK files
+Planned changes for version 0.3.3:
+  - ( ) Enable caching of VMDK descriptor file
 
-Upcomming changes for version 0.3.1:
-  - ( ) Enable caching of VMDK files
+Planned changes for version 0.3.2:
+  - ( ) Enable caching of VMDK descriptor file
+  - (X) Automatic addition of FUSE's allow_other option
+  - ( ) Always generate same VDI uuid when using the same input image
 
-Upcomming changes for version 0.3.0:
+Planned changes for version 0.3.1:
+  - ( ) Enable caching of VMDK descriptor file
+
+Planned changes for version 0.3.0:
   - (X) New cache file format (Mandatory to support new virtual formats)
-  - (X) Support for VMWare VMDK files
+  - (X) Experimental support for VMWare VMDK files

@@ -1,8 +1,8 @@
 /*******************************************************************************
 * xmount Copyright (c) 2008,2009 by Gillen Daniel <gillen.dan@pinguin.lu>      *
 *                                                                              *
-* xmount is a small tool to "fuse mount" various image formats as dd or vdi    *
-* files and enable virtual write access.                                       *
+* xmount is a small tool to "fuse mount" various harddisk image formats as dd, *
+* vdi or vmdk files and enable virtual write accessto them.                    *
 *                                                                              *
 * This program is free software: you can redistribute it and/or modify it      *
 * under the terms of the GNU General Public License as published by the Free   *
@@ -42,6 +42,7 @@
   //#include <libaff.h>
 #endif
 #include "xmount.h"
+#include "md5.h"
 
 // Some constant values
 #define IMAGE_INFO_HEADER "The following values have been extracted from " \
@@ -90,7 +91,7 @@ static pthread_mutex_t mutex_info_read;
  *   Print error and debug messages to stdout
  *
  * Params:
- *  pMessageType: "ERROR", "DEBUG" or "WARNING"
+ *  pMessageType: "ERROR" or "DEBUG"
  *  pCallingFunction: Name of calling function
  *  line: Line number of call
  *  pMessage: Message string
@@ -116,6 +117,28 @@ static void LogMessage(char *pMessageType,
 }
 
 /*
+ * LogWarnMessage:
+ *   Print warning messages to stdout
+ *
+ * Params:
+ *  pMessage: Message string
+ *  ...: Variable params with values to include in message string
+ *
+ * Returns:
+ *   n/a
+ */
+static void LogWarnMessage(char *pMessage,...) {
+  va_list VaList;
+
+  // Print message "header"
+  printf("WARNING: ");
+  // Print message with variable parameters
+  va_start(VaList,pMessage);
+  vprintf(pMessage,VaList);
+  va_end(VaList);
+}
+
+/*
  * PrintUsage:
  *   Print usage instructions (cmdline options etc..)
  *
@@ -133,10 +156,13 @@ static void PrintUsage(char *pProgramName) {
   printf("Options:\n");
   printf("  fopts:\n");
   printf("    -d : Enable FUSE's and xmount's debug mode.\n");
+  printf("    -h : Display this help message.\n");
   printf("    -s : Run single threaded.\n");
-  printf("    -o <fmopts> : Specify fuse mount options.\n");
+  printf("    -o no_allow_other : Disable automatic addition of FUSE's allow_other option.\n");
+  printf("    -o <fmopts> : Specify fuse mount options. Will also disable automatic\n");
+  printf("                  addition of FUSE's allow_other option!\n");
   printf("    INFO: For VMDK emulation, you have to uncomment \"user_allow_other\" in\n");
-  printf("          /etc/fuse.conf and use the -o allow_root commandline parameter.\n");
+  printf("          /etc/fuse.conf or run xmount as root.\n");
   printf("  mopts:\n");
   printf("    --cache <file> : Enable virtual write support and set cachefile to use.\n");
 //  printf("    --debug : Enable xmount's debug mode.\n");
@@ -160,12 +186,57 @@ static void PrintUsage(char *pProgramName) {
 #ifdef HAVE_LIBEWF
   printf(" If you use EWF files, you have to specify all image\n");
   printf("    segments! (If your shell supports it, you can use .E?? as file extension\n");
-  printf("    to specify all EWF files)\n");
+  printf("    to specify them all)\n");
 #else
   printf("\n");
 #endif
   printf("  mntp:\n");
   printf("    Mount point where virtual files should be located.\n");
+}
+
+/*
+ * CheckFuseAllowOther:
+ *   Check if FUSE allows us to pass the -o allow_other parameter.
+ *   This only works if we are root or user_allow_other is set in
+ *   /etc/fuse.conf.
+ *
+ * Params:
+ *   n/a
+ *
+ * Returns:
+ *   TRUE on success, FALSE on error
+ */
+static int CheckFuseAllowOther() {
+  if(geteuid()!=0) {
+    // Not running xmount as root. Try to read FUSE's config file /etc/fuse.conf
+    FILE *hFuseConf=(FILE*)fopen64("/etc/fuse.conf","r");
+    if(hFuseConf==NULL) {
+      LogWarnMessage("FUSE will not allow other users nor root to access your "
+                     "virtual harddisk image. To change this behavior, please "
+                     "add \"user_allow_other\" to /etc/fuse.conf or execute "
+                     "xmount as root.\n");
+      return FALSE;
+    }
+    // Search conf file for set user_allow_others
+    char line[256];
+    int PermSet=FALSE;
+    while(fgets(line,sizeof line,hFuseConf)!=NULL && PermSet!=TRUE) {
+      // TODO: Remove _any_ newline chars before checking
+      if(strcmp(line,"user_allow_other\n")==0) {
+        PermSet=TRUE;
+      }
+    }
+    fclose(hFuseConf);
+    if(PermSet==FALSE) {
+      LogWarnMessage("FUSE will not allow other users nor root to access your "
+                     "virtual harddisk image. To change this behavior, please "
+                     "add \"user_allow_other\" to /etc/fuse.conf or execute "
+                     "xmount as root.\n");
+      return FALSE;
+    }
+  }
+  // Running xmount as root or user_allow_other is set in /etc/fuse.conf
+  return TRUE;
 }
 
 /*
@@ -191,8 +262,7 @@ static int ParseCmdLine(const int argc,
                         int *pFilenameCount,
                         char ***pppFilenames,
                         char **ppMountpoint) {
-  int i=1;
-  int files=0,opts=0;
+  int i=1,files=0,opts=0,AllowOther=TRUE;
 
   // add argv[0] to pppNargv
   opts++;
@@ -211,43 +281,89 @@ static int ParseCmdLine(const int argc,
   // Parse options
   while(i<argc && *argv[i]=='-') {
     if(strlen(argv[i])>1 && *(argv[i]+1)!='-') {
-      opts++;
-      (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-      if((*pppNargv)==NULL) {
-        LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-        return FALSE;
-      }
-      (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-      if((*pppNargv)[opts-1]==NULL) {
-        LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-        return FALSE;
-      }
-      strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
-      if(strcmp(argv[i],"-o")==0) {
+      // Options beginning with - are mostly FUSE specific
+      if(strcmp(argv[i],"-d")==0) {
+        // Enable FUSE's and xmount's debug mode
+        opts++;
+        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
+        if((*pppNargv)==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+          return FALSE;
+        }
+        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
+        if((*pppNargv)[opts-1]==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+          return FALSE;
+        }
+        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+        XMountConfData.Debug=TRUE;
+      } else if(strcmp(argv[i],"-h")==0) {
+        // Print help message
+        PrintUsage(argv[0]);
+        exit(1);
+      } else if(strcmp(argv[i],"-o")==0) {
         // Next parameter specifies fuse mount options
         if((argc+1)>i) {
           i++;
-          opts++;
-          (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-          if((*pppNargv)==NULL) {
-            LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-            return FALSE;
+          // As the user specified the -o option, we assume he knows what he is
+          // doing. We won't append allow_other automatically. And we allow him
+          // to disable allow_other by passing a single "-o no_allow_other"
+          // which won't be passed to FUSE as it is xmount specific.
+          if(strcmp(argv[i],"no_allow_other")!=0) {
+            opts+=2;
+            (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
+            if((*pppNargv)==NULL) {
+              LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+              return FALSE;
+            }
+            (*pppNargv)[opts-2]=(char*)malloc((strlen(argv[i-1])+1)*sizeof(char));
+            (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
+            if((*pppNargv)[opts-2]==NULL || (*pppNargv)[opts-1]==NULL) {
+              LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+              return FALSE;
+            }
+            strncpy((*pppNargv)[opts-2],argv[i-1],strlen(argv[i-1])+1);
+            strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+            
           }
-          (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-          if((*pppNargv)[opts-1]==NULL) {
-            LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-            return FALSE;
-          }
-          strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+          AllowOther=FALSE;
         } else {
           LOG_ERROR("Couldn't parse mount options!\n")
+          PrintUsage(argv[0]);
+          exit(1);
+        }
+      } else if(strcmp(argv[i],"-s")==0) {
+        // Enable FUSE's single threaded mode
+        opts++;
+        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
+        if((*pppNargv)==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
           return FALSE;
         }
-      }
-      // React too on fuse's debug flag (-d)
-      if(strcmp(argv[i],"-d")==0) {
-        // Enable xmount's debug mode
-        XMountConfData.Debug=TRUE;
+        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
+        if((*pppNargv)[opts-1]==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+          return FALSE;
+        }
+        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+      } else if(strcmp(argv[i],"-V")==0) {
+        // Display FUSE version info
+        opts++;
+        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
+        if((*pppNargv)==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+          return FALSE;
+        }
+        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
+        if((*pppNargv)[opts-1]==NULL) {
+          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
+          return FALSE;
+        }
+        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+      } else {
+        LOG_ERROR("Unknown command line option \"%s\"\n",argv[i]);
+        PrintUsage(argv[0]);
+        exit(1);
       }
     } else {
       // Options beginning with -- are mountewf specific
@@ -265,7 +381,8 @@ static int ParseCmdLine(const int argc,
           XMountConfData.Writable=TRUE;
         } else {
           LOG_ERROR("You must specify a cache file to read/write data from/to!\n")
-          return FALSE;
+          PrintUsage(argv[0]);
+          exit(1);
         }
         LOG_DEBUG("Enabling virtual write support using cache file \"%s\"\n",
                   XMountConfData.pCacheFile)
@@ -289,11 +406,13 @@ static int ParseCmdLine(const int argc,
 #endif
           } else {
             LOG_ERROR("Unknown input image type \"%s\"!\n",argv[i])
-            return FALSE;
+            PrintUsage(argv[0]);
+            exit(1);
           }
         } else {
           LOG_ERROR("You must specify an input image type!\n");
-          return FALSE;
+          PrintUsage(argv[0]);
+          exit(1);
         }
       } else if(strcmp(argv[i],"--out")==0) {
         // Specify output image type
@@ -314,11 +433,13 @@ static int ParseCmdLine(const int argc,
             LOG_DEBUG("Setting virtual image type to VMDKS\n")
           } else {
             LOG_ERROR("Unknown output image type \"%s\"!\n",argv[i])
-            return FALSE;
+            PrintUsage(argv[0]);
+            exit(1);
           }
         } else {
           LOG_ERROR("You must specify an output image type!\n");
-          return FALSE;
+          PrintUsage(argv[0]);
+          exit(1);
         }
       } else if(strcmp(argv[i],"--owcache")==0) {
         // Enable writable access to mounted image and overwrite existing cache
@@ -335,7 +456,8 @@ static int ParseCmdLine(const int argc,
           XMountConfData.OverwriteCache=TRUE;
         } else {
           LOG_ERROR("You must specify a cache file to read/write data from/to!\n")
-          return FALSE;
+          PrintUsage(argv[0]);
+          exit(1);
         }
         LOG_DEBUG("Enabling virtual write support overwriting cache file \"%s\"\n",
                   XMountConfData.pCacheFile)
@@ -360,10 +482,31 @@ static int ParseCmdLine(const int argc,
         exit(0);
       } else {
         LOG_ERROR("Unknown command line option \"%s\"\n",argv[i]);
-        return FALSE;
+        PrintUsage(argv[0]);
+        exit(1);
       }
     }
     i++;
+  }
+  
+  if(AllowOther==TRUE) {
+    // Try to add "-o allow_other" to FUSE's cmd-line params
+    if(CheckFuseAllowOther()==TRUE) {
+      opts+=2;
+      *pppNargv=(char**)realloc(*pppNargv,opts*sizeof(char*));
+      if(*pppNargv==NULL) {
+        LOG_ERROR("Couldn't allocate memmory!\n")
+        return FALSE;
+      }
+      (*pppNargv)[opts-2]=(char*)malloc(3*sizeof(char)); // "-o\0"
+      (*pppNargv)[opts-1]=(char*)malloc(12*sizeof(char)); // "allow_other\0"
+      if((*pppNargv)[opts-2]==NULL || (*pppNargv)[opts-1]==NULL) {
+        LOG_ERROR("Couldn't allocate memmory!\n")
+        return FALSE;
+      }
+      strcpy((*pppNargv)[opts-2],"-o");
+      strcpy((*pppNargv)[opts-1],"allow_other");
+    }
   }
 
   // Parse input image filename(s)
@@ -382,10 +525,15 @@ static int ParseCmdLine(const int argc,
     strncpy((*pppFilenames)[files-1],argv[i],strlen(argv[i])+1);
     i++;
   }
+  if(files==0) {
+    LOG_ERROR("No input files specified!\n")
+    PrintUsage(argv[0]);
+    exit(1);
+  }
   *pFilenameCount=files;
 
   // Extract mountpoint
-  if(argc>1) {
+  if(i==(argc-1)) {
     (*ppMountpoint)=(char*)malloc((strlen(argv[argc-1])+1)*sizeof(char));
     if((*ppMountpoint)==NULL) {
       LOG_ERROR("Couldn't allocate memmory for mountpoint!\n")
@@ -394,7 +542,7 @@ static int ParseCmdLine(const int argc,
     strncpy(*ppMountpoint,argv[argc-1],strlen(argv[argc-1])+1);
     opts++;
     (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-   if((*pppNargv)==NULL) {
+    if((*pppNargv)==NULL) {
       LOG_ERROR("Couldn't allocate memmory for mountpoint!\n")
       return FALSE;
     }
@@ -404,6 +552,10 @@ static int ParseCmdLine(const int argc,
       return FALSE;
     }
     strncpy((*pppNargv)[opts-1],*ppMountpoint,strlen((*ppMountpoint))+1);
+  } else {
+    LOG_ERROR("No mountpoint specified!\n")
+    PrintUsage(argv[0]);
+    exit(1);
   }
 
   *pNargc=opts;
@@ -1837,7 +1989,7 @@ static int WriteVirtFile(const char *path,
                                                   sizeof(char));
       }
       if(pVirtualVmdkLockFileData==NULL) {
-        LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkLockFileData!\n")
+        LOG_ERROR("Couldn't alloc memory for pVirtualVmdkLockFileData!\n")
         return 0;
       }
     }
@@ -1855,6 +2007,44 @@ static int WriteVirtFile(const char *path,
   }
 
   return size;
+}
+
+/*
+ * CalculateInputImageHash:
+ *   Calculates an MD5 hash of the first HASH_AMOUNT bytes of the input image.
+ *
+ * Params:
+ *   pHashLow : Pointer to the lower 64 bit of the hash
+ *   pHashHigh : Pointer to the higher 64 bit of the hash
+ *
+ * Returns:
+ *   TRUE on success, FALSE on error
+ */
+static int CalculateInputImageHash(uint64_t *pHashLow, uint64_t *pHashHigh) {
+  char hash[16];
+  int i;
+  md5_state_t md5_state;
+  char *buf=(char*)malloc(HASH_AMOUNT*sizeof(char));
+  if(buf==NULL) {
+    LOG_ERROR("Couldn't alloc memory!\n")
+    return FALSE;
+  }
+  size_t read_data=GetOrigImageData(buf,0,HASH_AMOUNT);
+  if(read_data>0) {
+    // Calculate MD5 hash
+    md5_init(&md5_state);
+    md5_append(&md5_state,buf,HASH_AMOUNT);
+    md5_finish(&md5_state,hash);
+    // Convert MD5 hash into two 64bit integers
+    *pHashLow=*((uint64_t*)hash);
+    *pHashHigh=*((uint64_t*)(hash+8));
+    free(buf);
+    return TRUE;
+  } else {
+    LOG_ERROR("Couldn't read data from original image file!\n")
+    free(buf);
+    return FALSE;
+  }
 }
 
 /*
@@ -1918,17 +2108,20 @@ static int InitVirtVdiHeader() {
   pVdiFileHeader->cbSector=512; // Legacy info
   pVdiFileHeader->u32Dummy=0;
   pVdiFileHeader->cbDisk=ImageSize;
-  // Seems that VBox is always using 1MB as blocksize
+  // Seems as VBox is always using a 1MB blocksize
   pVdiFileHeader->cbBlock=VDI_IMAGE_BLOCK_SIZE;
   pVdiFileHeader->cbBlockExtra=0;
   pVdiFileHeader->cBlocks=BlockEntries;
   pVdiFileHeader->cBlocksAllocated=BlockEntries;
-  // Just generate some random UUIDS
-  // VBox won't accept immages where create and modify UUIDS aren't set
-  *((uint32_t*)(&(pVdiFileHeader->uuidCreate_l)))=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidCreate_l))+4)=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidCreate_h)))=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidCreate_h))+4)=rand();
+  // Use partial MD5 input file hash as creation UUID and generate a random
+  // modification UUID. VBox won't accept immages where create and modify UUIDS
+  // aren't set.
+  pVdiFileHeader->uuidCreate_l=XMountConfData.InputHashLo;
+  pVdiFileHeader->uuidCreate_h=XMountConfData.InputHashHi;
+  //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_l)))=rand();
+  //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_l))+4)=rand();
+  //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_h)))=rand();
+  //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_h))+4)=rand();
   *((uint32_t*)(&(pVdiFileHeader->uuidModify_l)))=rand();
   *((uint32_t*)(&(pVdiFileHeader->uuidModify_l))+4)=rand();
   *((uint32_t*)(&(pVdiFileHeader->uuidModify_h)))=rand();
@@ -2345,16 +2538,22 @@ int main(int argc, char *argv[])
                    &ppInputFilenames,
                    &pMountpoint))
   {
+    LOG_ERROR("Error parsing command line options!\n")
+    //PrintUsage(argv[0]);
+    return 1;
+  }
+
+  // Check command line options
+  if(nargc<2 /*|| InputFilenameCount==0 || pMountpoint==NULL*/) {
     LOG_ERROR("Couldn't parse command line options!\n")
     PrintUsage(argv[0]);
     return 1;
   }
 
-  // Check command line options
-  if(nargc<2 || InputFilenameCount==0 || pMountpoint==NULL) {
-    LOG_ERROR("Couldn't parse command line options!\n")
-    PrintUsage(argv[0]);
-    return 1;
+  if(XMountConfData.Debug==TRUE) {
+    LOG_DEBUG("Options passed to FUSE: ")
+    for(i=0;i<nargc;i++) { printf("%s ",ppNargv[i]); }
+    printf("\n");
   }
 
 #ifdef HAVE_LIBEWF
@@ -2383,10 +2582,10 @@ int main(int argc, char *argv[])
   pthread_mutex_init(&mutex_info_read,NULL);
 
   if(InputFilenameCount==1) {
-    LOG_DEBUG("Extracting infos from image file \"%s\"...\n",
+    LOG_DEBUG("Loading image file \"%s\"...\n",
               ppInputFilenames[0])
   } else {
-    LOG_DEBUG("Extracting infos from image files \"%s .. %s\"...\n",
+    LOG_DEBUG("Loading image files \"%s .. %s\"...\n",
               ppInputFilenames[0],
               ppInputFilenames[InputFilenameCount-1])
   }
@@ -2435,6 +2634,23 @@ int main(int argc, char *argv[])
       return 1;
   }
   LOG_DEBUG("Input image file opened successfully\n")
+
+  // Calculate partial MD5 hash of input image file
+  if(CalculateInputImageHash(&(XMountConfData.InputHashLo),
+                             &(XMountConfData.InputHashHi))==FALSE)
+  {
+    LOG_ERROR("Couldn't calculate partial hash of input image file!\n")
+    return 1;
+  }
+  
+  if(XMountConfData.Debug==TRUE) {
+    LOG_DEBUG("Partial MD5 hash of input image file: ")
+    for(i=0;i<8;i++) printf("%02hhx",
+                            *(((char*)(&(XMountConfData.InputHashLo)))+i));
+    for(i=0;i<8;i++) printf("%02hhx",
+                            *(((char*)(&(XMountConfData.InputHashHi)))+i));
+    printf("\n");
+  }
 
   if(!ExtractVirtFileNames(ppInputFilenames[0])) {
     LOG_ERROR("Couldn't extract virtual file names!\n");
@@ -2649,4 +2865,20 @@ int main(int argc, char *argv[])
             * Added "vmdks" output type. Same as "vmdk" but generates a disk
               connected to the SCSI bus rather than the IDE bus.
   20090710: v0.3.1 released
+  20090721: * Added function CheckFuseAllowOther to check wether FUSE supports
+              the "-o allow_other" option. It is supported when
+              "user_allow_other" is set in /etc/fuse.conf or when running
+              xmount as root.
+            * Automatic addition of FUSE's "-o allow_other" option if it is
+              supported.
+            * Added special "-o no_allow_other" command line parameter to
+              disable automatic addition of the above option.
+            * Reorganisation of FUSE's and xmount's command line options
+              processing.
+            * Added LogWarnMessage function to output a warning message.
+  20090722: * Added function CalculateInputImageHash to calculate an MD5 hash
+              of the first input image's HASH_AMOUNT bytes of data. This hash is
+              used as VDI creation UUID and will later be used to match cache
+              files to input images.
+  20090724: v0.3.2 released
 */

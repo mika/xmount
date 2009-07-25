@@ -81,6 +81,9 @@ typedef struct TXMountConfData {
   uint64_t OrigImageSize;
   /** Size of virtual image */
   uint64_t VirtImageSize;
+  /** Partial MD5 hash of input image */
+  uint64_t InputHashLo;
+  uint64_t InputHashHi;
 } TXMountConfData;
 
 /*
@@ -190,6 +193,9 @@ typedef struct TCacheFileBlockIndex {
   #define CACHE_FILE_SIGNATURE 0xFFFF746E756F6D78LL 
 #endif
 #define CUR_CACHE_FILE_VERSION 0x00000002 // Current cache file version
+#define HASH_AMOUNT (1024*1024)*10 // Amount of data used to construct a
+                                   // "unique" hash for every input image
+                                   // (10MByte)
 // Current header
 typedef struct TCacheFileHeader {
   /** Simple signature to identify cache files */
