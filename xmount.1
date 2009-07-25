@@ -1,7 +1,7 @@
 .\" 
-.TH "xmount" "1" "Jul 10, 2009" "Gillen Daniel" "xmount"
+.TH "xmount" "1" "Jul 24, 2009" "Gillen Daniel" "xmount"
 .SH "NAME"
-xmount \- Tool to crossmount between multiple input and output image files
+xmount \- Tool to crossmount between multiple input and output harddisk image files
 
 .SH "SYNOPSIS"
 .B xmount
@@ -10,36 +10,44 @@ xmount \- Tool to crossmount between multiple input and output image files
 
 .SH "DESCRIPTION"
 .B xmount
-allows you to convert on\-the\-fly between multiple input and output image
-types. xmount creates a virtual file system using FUSE (Filesystem in
-Userspace) that contains a virtual representation of the input image. The
-virtual representation can be in raw DD, in VirtualBox's virtual disk file
-format or in VmWare's VMDK format. Input images can be raw DD or EWF (Expert
-Witness Compression Format) files. In addition, xmount also supports virtual
-write access to the output files that is redirected to a cache file. This
-makes it for example possible to use VirtualBox to boot an os contained in a
-read\-only EWF image.
+allows you to convert on\-the\-fly between multiple input and output
+harddisk image types. xmount creates a virtual file system using FUSE
+(Filesystem in Userspace) that contains a virtual representation of the input
+image. The virtual representation can be in raw DD, in VirtualBox's virtual
+disk file format or in VmWare's VMDK format. Input images can be raw DD or EWF
+(Expert Witness Compression Format) files. In addition, xmount also supports
+virtual write access to the output files that is redirected to a cache file.
+This makes it for example possible to use VirtualBox to boot an os contained
+in a read\-only EWF image.
 .br 
 
 .SH "OPTIONS"
 .B 
 fopts: (Options specific to FUSE)
   \-d: Enable FUSE's and xmount's debug mode.
+  \-h: Display this help message.
   \-s: Run single threaded.
-  \-o <fmopts> : Specify fuse mount options.
+  \-o no_allow_other: Disable automatic addition of FUSE's allow_other option.
+  \-o <fmopts> :
+    Specify fuse mount options. Will also disable automatic addition of FUSE's
+    allow_other option!
   INFO: For VMDK emulation, you have to uncomment "user_allow_other" in
-        /etc/fuse.conf and use the \-o allow_root command line parameter.
+        /etc/fuse.conf or run xmount as root.
 .br 
 .B 
 mopts: (Options specific to xmount)
+  \-\-cache <file> :
+    Enable virtual write support and set cachefile to use.
   \-\-in <type> :
     Specify input image type. Type can be "dd" or "ewf".
   \-\-info :
     Print out some infos about used compiler and libraries.
   \-\-out <type> :
     Specify output image type. Type can be "dd", "vdi", "vmdk(s)".
+  \-\-owcache <file> :
+    Same as \-\-cache <file> but overwrites existing cache.
   \-\-rw <cache_file> :
-    Enable virtual write support and set cache file to use.
+    Same as \-\-cache.
   \-\-version :
     Same as \-\-info.
   INFO: Input and output image type defaults to "dd" if not specified.
@@ -48,7 +56,7 @@ mopts: (Options specific to xmount)
 ifile:
   Input image file. If you use EWF files, you have to specify all image
   segments! (If your shell supports it, you can use .E?? as file
-  extension to specify all EWF files)
+  extension to specify them files)
 .br 
 .B 
 mntp:
@@ -71,4 +79,4 @@ To xmount the same ewf image as vdi file, you would use a command like this:
 And to enable virtual write support on a raw DD input image xmounted as VDI
 file:
 
-  xmount \-\-out vdi --rw ./acquired_disk.cache ./acquired_disk.dd /mnt
+  xmount \-\-out vdi --cache ./acquired_disk.cache ./acquired_disk.dd /mnt

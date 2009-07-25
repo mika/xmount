@@ -1,7 +1,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([xmount], [0.3.1], [bugs@pinguin.lu])
+AC_INIT([xmount], [0.3.2], [bugs@pinguin.lu])
 AM_INIT_AUTOMAKE(@PACKAGE_NAME@, @PACKAGE_VERSION@)
 AC_CONFIG_SRCDIR([xmount.c])
 AC_CONFIG_HEADER([config.h])
@@ -19,7 +19,7 @@ AC_CHECK_HEADER([fcntl.h],,AC_MSG_ERROR([No fcntl.h header file found!]))
 AC_CHECK_HEADER([inttypes.h],,AC_MSG_ERROR([No inttypes.h header file found!]))
 AC_CHECK_HEADER([stdint.h],,AC_MSG_ERROR([No stdint.h header file found!]))
 AC_CHECK_HEADER([stdlib.h],,AC_MSG_ERROR([No stdlib.h header file found!]))
-AC_CHECK_HEADER([fuse.h],,AC_MSG_WARN([No fuse.h header file found! Could be a false positive!]))
+AC_CHECK_HEADER([fuse.h],,AC_MSG_WARN([No fuse.h header file found! This could be a false positive!]))
 AC_CHECK_HEADER([libewf.h],,AC_MSG_WARN([No libewf.h header file found! EWF input support will be disabled.]))
 #AC_CHECK_HEADERS([fcntl.h stdint.h stdlib.h string.h fuse.h libewf.h])
 

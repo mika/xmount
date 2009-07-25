@@ -1,9 +1,16 @@
-This file lists the most important changes to
-the previous released version. For a full list of changes
-please refer to the ChangeLog and source files.
+This file lists the most important changes to the previous released version.
+For a full list of changes please refer to the source files.
+
+New for version 0.3.2:
+  - Automatic addition of FUSE's "-o allow_other" option if it is supported.
+
+New for version 0.3.1:
+  - Some bugfixes for VMDK emulation (Still experimental)
+  - It is now possible to specify whether VMDK disks are attached to the IDE
+    or SCSI bus. (Output type vmdk or vmdks)
 
 New for version 0.3.0:
-  - Added support for VMDK emulation
+  - Added experimental support for VMDK emulation
 
 New for version 0.2.3:
   - Virtual write support finally fixed
@@ -20,10 +27,11 @@ New for version 0.2.0:
   - Support for virtual write access
 
 New for version 0.1.2:
-  - Added random generator initialisation (Makes it possible to use more than 1 mounted vdi in VBox)
+  - Added random generator initialisation (Makes it possible to use more than 1
+    mounted vdi in VBox)
 
 New for version 0.1.1:
-  - Fixed sever bug
+  - Fixed some severe bugs
 
 New for version 0.1.0:
   - First release

@@ -35,7 +35,7 @@ subdir = .
 DIST_COMMON = README $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(srcdir)/Makefile.in $(srcdir)/config.h.in \
 	$(top_srcdir)/configure AUTHORS COPYING ChangeLog INSTALL NEWS \
-	compile depcomp install-sh missing
+	compile config.guess config.sub depcomp install-sh missing
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -48,7 +48,7 @@ CONFIG_CLEAN_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS)
-am_xmount_OBJECTS = xmount-xmount.$(OBJEXT)
+am_xmount_OBJECTS = xmount-md5.$(OBJEXT) xmount-xmount.$(OBJEXT)
 xmount_OBJECTS = $(am_xmount_OBJECTS)
 xmount_LDADD = $(LDADD)
 xmount_LINK = $(CCLD) $(xmount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
@@ -160,7 +160,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-xmount_SOURCES = xmount.c
+xmount_SOURCES = md5.c xmount.c
 xmount_CFLAGS = -D_FILE_OFFSET_BITS=64
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -250,6 +250,7 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xmount-md5.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/xmount-xmount.Po@am__quote@
 
 .c.o:
@@ -265,6 +266,20 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(COMPILE) -c `$(CYGPATH_W) '$<'`
+
+xmount-md5.o: md5.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -MT xmount-md5.o -MD -MP -MF $(DEPDIR)/xmount-md5.Tpo -c -o xmount-md5.o `test -f 'md5.c' || echo '$(srcdir)/'`md5.c
+@am__fastdepCC_TRUE@	mv -f $(DEPDIR)/xmount-md5.Tpo $(DEPDIR)/xmount-md5.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='md5.c' object='xmount-md5.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -c -o xmount-md5.o `test -f 'md5.c' || echo '$(srcdir)/'`md5.c
+
+xmount-md5.obj: md5.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -MT xmount-md5.obj -MD -MP -MF $(DEPDIR)/xmount-md5.Tpo -c -o xmount-md5.obj `if test -f 'md5.c'; then $(CYGPATH_W) 'md5.c'; else $(CYGPATH_W) '$(srcdir)/md5.c'; fi`
+@am__fastdepCC_TRUE@	mv -f $(DEPDIR)/xmount-md5.Tpo $(DEPDIR)/xmount-md5.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='md5.c' object='xmount-md5.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -c -o xmount-md5.obj `if test -f 'md5.c'; then $(CYGPATH_W) 'md5.c'; else $(CYGPATH_W) '$(srcdir)/md5.c'; fi`
 
 xmount-xmount.o: xmount.c
 @am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -MT xmount-xmount.o -MD -MP -MF $(DEPDIR)/xmount-xmount.Tpo -c -o xmount-xmount.o `test -f 'xmount.c' || echo '$(srcdir)/'`xmount.c
