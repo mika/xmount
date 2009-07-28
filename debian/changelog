@@ -1,8 +1,9 @@
 xmount (0.3.2-1) stable; urgency=low
 
   * New upstream version 0.3.2.
+  * Slightly adjust package long description and copyright file.
 
- -- Michael Prokop <mika@debian.org>  Sun, 26 Jul 2009 00:36:03 +0200
+ -- Michael Prokop <mika@debian.org>  Tue, 28 Jul 2009 11:13:04 +0200
 
 xmount (0.3.1-1) stable; urgency=low
 
