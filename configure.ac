@@ -1,7 +1,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([xmount], [0.3.2], [bugs@pinguin.lu])
+AC_INIT([xmount], [0.3.3], [bugs@pinguin.lu])
 AM_INIT_AUTOMAKE(@PACKAGE_NAME@, @PACKAGE_VERSION@)
 AC_CONFIG_SRCDIR([xmount.c])
 AC_CONFIG_HEADER([config.h])
