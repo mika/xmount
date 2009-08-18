@@ -3,8 +3,9 @@ xmount (0.3.3-1) unstable; urgency=low
   * New upstream version 0.3.3 (being a bugfix release addressing the
     "fopen64 implicitly converted to pointer" issue). [Closes: #542234]
     Thanks to Dann Frazier for the bugreport.
+  * Bump Standard-Version to 3.8.3 (no further changes).
 
- -- Michael Prokop <mika@debian.org>  Wed, 19 Aug 2009 01:22:43 +0200
+ -- Michael Prokop <mika@debian.org>  Wed, 19 Aug 2009 01:27:51 +0200
 
 xmount (0.3.2-1) unstable; urgency=low
 
