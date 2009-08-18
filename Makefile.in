@@ -161,7 +161,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 xmount_SOURCES = md5.c xmount.c
-xmount_CFLAGS = -D_FILE_OFFSET_BITS=64
+xmount_CFLAGS = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
