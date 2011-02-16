@@ -1,6 +1,17 @@
 This file lists the most important changes to the previous released version.
 For a full list of changes please refer to the source files.
 
+New for version 0.4.4:
+  - Fixed a bug that prevents VirtualBox 3.2.8 or above from recognising the
+    generated VDIs.
+
+New for version 0.4.1:
+  - Code cleanups and some minor bugfixes
+
+New for version 0.4.0:
+  - AFFLIB support for input images
+  - AFFLIB and LIBEWF are now statically linked to xmount
+
 New for version 0.3.2:
   - Automatic addition of FUSE's "-o allow_other" option if it is supported.
 
