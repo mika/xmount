@@ -1,3 +1,11 @@
+xmount (0.4.4-1) unstable; urgency=low
+
+  * [7c86bed] Merge new upstream version 0.4.4.
+  * [6a5c49e] Bump Standards-Version to 3.9.1.
+  * [7e1ac4b] Add libgnutls-dev to Build-Depends.
+
+ -- Michael Prokop <mika@debian.org>  Wed, 16 Feb 2011 15:11:51 +0100
+
 xmount (0.3.3-1) unstable; urgency=low
 
   * New upstream version 0.3.3 (being a bugfix release addressing the
