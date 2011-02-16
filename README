@@ -30,16 +30,23 @@ Table of contents
   You should have received a copy of the GNU General Public License along with
   this program. If not, see <http://www.gnu.org/licenses/>.
 
+  ---
+
+  Due to AFFLIB, I have to mention that:
+
+  This product includes software developed by Simson L. Garfinkel and Basis
+  Technology Corp.
+
 1.0 What is xmount? - A short description
   xmount allows you to convert on-the-fly between multiple input and output
   harddisk image types. xmount creates a virtual file system using FUSE
   (Filesystem in Userspace) that contains a virtual representation of the input
   image. The virtual representation can be in raw DD, VirtualBox's virtual disk
-  file format or in VmWare's VMDK file format. Input images can be raw DD or EWF
-  (Expert Witness Compression Format) files. In addition, xmount also supports
-  virtual write access to the output files that is redirected to a cache file.
-  This makes it for example possible to use VirtualBox to boot an OS contained
-  in a read-only EWF image.
+  file format or in VmWare's VMDK file format. Input images can be raw DD, EWF
+  (Expert Witness Compression Format) or AFF (Advanced Forensic Format) files.
+  In addition, xmount also supports virtual write access to the output files
+  that is redirected to a cache file. This makes it possible to boot acquired
+  harddisk images using QEMU, KVM, VirtualBox, VmWare or alike.
 
 2.0 A deeper view of things
   2.1 Emulated DD file
@@ -50,8 +57,7 @@ Table of contents
     When using the "--out vdi" command line parameter, a VirtualBox disk file
     is emulated. This means that xmount builds a virtual VDI header and prepends
     it to the raw data contained in the input image. The VDI file can be used in
-    VirtualBox as a virtual disk file. This makes it possible to access data
-    from harddisk image files in a virtual machine.
+    VirtualBox as a virtual disk file.
 
   2.3 Emulated VMDK file
     When using the "--out vmdk(s)" command line paramter, a VMWare virtual disk
@@ -62,7 +68,7 @@ Table of contents
     bus.
 
     When emulating VMDK files to be used in VMWare, you have to enable
-    "user_allow_other" in /etc/fuse.conf or run xmount as root.
+    "user_allow_other" in /etc/fuse.conf or run xmount and VmWare as root.
 
     WARNING: VMDK support should be considered experimental and currently the
              VMDK descriptor file isn't cached.
@@ -83,25 +89,26 @@ Table of contents
 
   3.1 Prerequisits
     SYSTEM:
-      Some sort of Linux or *BSD supporting the following libs.
+      Some sort of Linux with a recent kernel (2.6.x or above).
     FUSE:
-      Your os must support FUSE and have the apropiate libraries installed.
+      Your os must support FUSE and have the appropriate libraries installed.
       (See http://fuse.sourceforge.net/ for more informations). To be able to
       install from source, you also need the FUSE header files.
-    LIBEWF: (If you want to have EWF input image support)
-      You must have installed libewf. To install from source, you also need the
-      appropriate header files. (See https://www.uitwisselplatform.nl/projects/
-      libewf/ for more informations)
+    LIBEWF:
+      To enable EWF input image support. Get it from
+      http://sourceforge.net/projects/libewf/
+    LIBAFF:
+      To enable AFF input image support. Get it from http://www.afflib.org/
 
   3.2 Install from a package
-    Chances are I provide prebuild binary packages for OpenBSD (No EWF and AFF
-    support), Slackware, Debian and Ubuntu. In this case, you only have to fire
-    up your distribution's package manager and install xmount. See
-    http://www.pinguin.lu for more informations and download links.
+    Chances are I provide prebuild binary packages for Slackware, Debian and
+    Ubuntu. In this case, you only have to fire up your distribution's package
+    manager and install xmount. See https://www.pinguin.lu for more informations
+    and download links.
 
   3.3 Install from source
     After having checked the prerequisits, you should be able to compile and
-    install xmount by simply issuing the followng three commands:
+    install xmount by simply issuing the following three commands:
 
     # ./configure
     # make
@@ -140,7 +147,7 @@ Table of contents
 
     To xmount the same ewf image as vdi file, you would use a command like this:
 
-      xmount --in ewf --output vdi ./acquired_disk.E?? /mnt
+      xmount --in ewf --out vdi ./acquired_disk.E?? /mnt
 
     And to enable virtual write support on a raw DD input image xmounted as VDI
     file:

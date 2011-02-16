@@ -2,7 +2,7 @@
 * xmount Copyright (c) 2008,2009 by Gillen Daniel <gillen.dan@pinguin.lu>      *
 *                                                                              *
 * xmount is a small tool to "fuse mount" various harddisk image formats as dd, *
-* vdi or vmdk files and enable virtual write accessto them.                    *
+* vdi or vmdk files and enable virtual write access to them.                   *
 *                                                                              *
 * This program is free software: you can redistribute it and/or modify it      *
 * under the terms of the GNU General Public License as published by the Free   *
@@ -18,12 +18,22 @@
 * this program. If not, see <http://www.gnu.org/licenses/>.                    *
 *******************************************************************************/
 
-// TODO: Should be defined later by configure script in function to which libs
-// it finds and what input image types are supported
-#undef HAVE_LIBAFF
+#define HAVE_LIBAFF_STATIC
+#define HAVE_LIBEWF_STATIC
 
-// Enable xmount's libewf beta 20090506 version compatibility
-#undef LIBEWF_BETA
+#ifdef HAVE_LIBEWF
+  #define WITH_LIBEWF
+#endif
+#ifdef HAVE_LIBAFF_STATIC
+  #define WITH_LIBEWF
+#endif
+
+#ifdef HAVE_LIBAFF
+  #define WITH_LIBAFF
+#endif
+#ifdef HAVE_LIBAFF_STATIC
+  #define WITH_LIBAFF
+#endif
 
 #include "config.h"
 #include <stdio.h>
@@ -31,15 +41,22 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
 #include <linux/fs.h>
 #include <pthread.h>
-#include <endian.h>
 #include <stdint.h>
 #ifdef HAVE_LIBEWF
   #include <libewf.h>
 #endif
+#ifdef HAVE_LIBEWF_STATIC
+  #include "libewf/include/libewf.h"
+#endif
 #ifdef HAVE_LIBAFF
-  //#include <libaff.h>
+  #include <libaff.h>
+#endif
+#ifdef HAVE_LIBAFF_STATIC
+  #include "libaff/lib/afflib.h"
 #endif
 #include "xmount.h"
 #include "md5.h"
@@ -55,14 +72,11 @@
 static TXMountConfData XMountConfData;
 // Handles for input image types
 static FILE *hDdFile=NULL;
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
   static LIBEWF_HANDLE *hEwfFile=NULL;
-  #ifdef LIBEWF_BETA
-    static libewf_error_t *pLibEwfError=NULL;
-  #endif
 #endif
-#ifdef HAVE_LIBAFF
-  //static AFILE *hAffFile=NULL;
+#ifdef WITH_LIBAFF
+  static AFFILE *hAffFile=NULL;
 #endif
 // Pointer to virtual info file
 static char *pVirtualImageInfoFile=NULL;
@@ -73,10 +87,11 @@ static char *pVdiBlockMap=NULL;
 static uint32_t VdiBlockMapSize=0;
 // Vars needed for VMDK emulation
 static char *pVirtualVmdkFile=NULL;
+static int VirtualVmdkFileSize=0;
 static char *pVirtualVmdkLockDir=NULL;
 static char *pVirtualVmdkLockDir2=NULL;
 static char *pVirtualVmdkLockFileData=NULL;
-static int pVirtualVmdkLockFileDataSize=0;
+static int VirtualVmdkLockFileDataSize=0;
 static char *pVirtualVmdkLockFileName=NULL;
 // Vars needed for virtual write access
 static FILE *hCacheFile=NULL;
@@ -149,7 +164,7 @@ static void LogWarnMessage(char *pMessage,...) {
  *   n/a
  */
 static void PrintUsage(char *pProgramName) {
-  printf("\nxmount v%s copyright (c) 2008, 2009 by Gillen Daniel "
+  printf("\nxmount v%s copyright (c) 2008-2010 by Gillen Daniel "
          "<gillen.dan@pinguin.lu>\n",PACKAGE_VERSION);
   printf("\nUsage:\n");
   printf("  %s [[fopts] [mopts]] <ifile> [<ifile> [...]] <mntp>\n\n",pProgramName);
@@ -167,10 +182,10 @@ static void PrintUsage(char *pProgramName) {
   printf("    --cache <file> : Enable virtual write support and set cachefile to use.\n");
 //  printf("    --debug : Enable xmount's debug mode.\n");
   printf("    --in <itype> : Input image format. <itype> can be \"dd\"");
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
   printf(", \"ewf\"");
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
   printf(", \"aff\"");
 #endif
   printf(".\n");
@@ -183,7 +198,7 @@ static void PrintUsage(char *pProgramName) {
   printf("    WARNING: Output image type \"vmdk(s)\" should be considered experimental!\n");
   printf("  ifile:\n");
   printf("    Input image file.");
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
   printf(" If you use EWF files, you have to specify all image\n");
   printf("    segments! (If your shell supports it, you can use .E?? as file extension\n");
   printf("    to specify them all)\n");
@@ -220,9 +235,10 @@ static int CheckFuseAllowOther() {
     // Search conf file for set user_allow_others
     char line[256];
     int PermSet=FALSE;
-    while(fgets(line,sizeof line,hFuseConf)!=NULL && PermSet!=TRUE) {
-      // TODO: Remove _any_ newline chars before checking
-      if(strcmp(line,"user_allow_other\n")==0) {
+    while(fgets(line,sizeof(line),hFuseConf)!=NULL && PermSet!=TRUE) {
+      // TODO: This works as long as there is no other parameter beginning with
+      // "user_allow_other" :)
+      if(strncmp(line,"user_allow_other",strlen("user_allow_other"))==0) {
         PermSet=TRUE;
       }
     }
@@ -266,17 +282,8 @@ static int ParseCmdLine(const int argc,
 
   // add argv[0] to pppNargv
   opts++;
-  (*pppNargv)=(char**)malloc(opts*sizeof(char*));
-  if((*pppNargv)==NULL) {
-    LOG_ERROR("Couldn't allocate memmory!\n")
-    return FALSE;
-  }
-  (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[0])+1)*sizeof(char));
-  if((*pppNargv)[opts-1]==NULL) {
-    LOG_ERROR("Couldn't allocate memmory!\n")
-    return FALSE;
-  }
-  strncpy((*pppNargv)[opts-1],argv[0],strlen(argv[0])+1);
+  XMOUNT_MALLOC(*pppNargv,char**,opts*sizeof(char*))
+  XMOUNT_STRSET((*pppNargv)[opts-1],argv[0])
 
   // Parse options
   while(i<argc && *argv[i]=='-') {
@@ -285,17 +292,8 @@ static int ParseCmdLine(const int argc,
       if(strcmp(argv[i],"-d")==0) {
         // Enable FUSE's and xmount's debug mode
         opts++;
-        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-        if((*pppNargv)==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-        if((*pppNargv)[opts-1]==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+        XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+        XMOUNT_STRSET((*pppNargv)[opts-1],argv[i])
         XMountConfData.Debug=TRUE;
       } else if(strcmp(argv[i],"-h")==0) {
         // Print help message
@@ -311,20 +309,9 @@ static int ParseCmdLine(const int argc,
           // which won't be passed to FUSE as it is xmount specific.
           if(strcmp(argv[i],"no_allow_other")!=0) {
             opts+=2;
-            (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-            if((*pppNargv)==NULL) {
-              LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-              return FALSE;
-            }
-            (*pppNargv)[opts-2]=(char*)malloc((strlen(argv[i-1])+1)*sizeof(char));
-            (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-            if((*pppNargv)[opts-2]==NULL || (*pppNargv)[opts-1]==NULL) {
-              LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-              return FALSE;
-            }
-            strncpy((*pppNargv)[opts-2],argv[i-1],strlen(argv[i-1])+1);
-            strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
-            
+            XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+            XMOUNT_STRSET((*pppNargv)[opts-2],argv[i-1])
+            XMOUNT_STRSET((*pppNargv)[opts-1],argv[i])
           }
           AllowOther=FALSE;
         } else {
@@ -335,49 +322,26 @@ static int ParseCmdLine(const int argc,
       } else if(strcmp(argv[i],"-s")==0) {
         // Enable FUSE's single threaded mode
         opts++;
-        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-        if((*pppNargv)==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-        if((*pppNargv)[opts-1]==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+        XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+        XMOUNT_STRSET((*pppNargv)[opts-1],argv[i])
       } else if(strcmp(argv[i],"-V")==0) {
         // Display FUSE version info
         opts++;
-        (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-        if((*pppNargv)==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-        if((*pppNargv)[opts-1]==NULL) {
-          LOG_ERROR("Couldn't allocate memmory for fuse options!\n")
-          return FALSE;
-        }
-        strncpy((*pppNargv)[opts-1],argv[i],strlen(argv[i])+1);
+        XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+        XMOUNT_STRSET((*pppNargv)[opts-1],argv[i])
       } else {
         LOG_ERROR("Unknown command line option \"%s\"\n",argv[i]);
         PrintUsage(argv[0]);
         exit(1);
       }
     } else {
-      // Options beginning with -- are mountewf specific
+      // Options beginning with -- are xmount specific
       if(strcmp(argv[i],"--cache")==0 || strcmp(argv[i],"--rw")==0) {
         // Emulate writable access to mounted image
         // Next parameter must be cache file to read/write changes from/to
         if((argc+1)>i) {
           i++;
-          XMountConfData.pCacheFile=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-          if(XMountConfData.pCacheFile==NULL) {
-            LOG_ERROR("Couldn't alloc memmory!\n")
-            return FALSE;
-          }
-          strncpy(XMountConfData.pCacheFile,argv[i],strlen(argv[i])+1);
+          XMOUNT_STRSET(XMountConfData.pCacheFile,argv[i])
           XMountConfData.Writable=TRUE;
         } else {
           LOG_ERROR("You must specify a cache file to read/write data from/to!\n")
@@ -394,12 +358,12 @@ static int ParseCmdLine(const int argc,
           if(strcmp(argv[i],"dd")==0) {
             XMountConfData.OrigImageType=TOrigImageType_DD;
             LOG_DEBUG("Setting input image type to DD\n")
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
           } else if(strcmp(argv[i],"ewf")==0) {
             XMountConfData.OrigImageType=TOrigImageType_EWF;
             LOG_DEBUG("Setting input image type to EWF\n")
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
           } else if(strcmp(argv[i],"aff")==0) {
             XMountConfData.OrigImageType=TOrigImageType_AFF;
             LOG_DEBUG("Setting input image type to AFF\n")
@@ -446,12 +410,7 @@ static int ParseCmdLine(const int argc,
         // Next parameter must be cache file to read/write changes from/to
         if((argc+1)>i) {
           i++;
-          XMountConfData.pCacheFile=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-          if(XMountConfData.pCacheFile==NULL) {
-            LOG_ERROR("Couldn't alloc memmory!\n")
-            return FALSE;
-          }
-          strncpy(XMountConfData.pCacheFile,argv[i],strlen(argv[i])+1);
+          XMOUNT_STRSET(XMountConfData.pCacheFile,argv[i])
           XMountConfData.Writable=TRUE;
           XMountConfData.OverwriteCache=TRUE;
         } else {
@@ -468,13 +427,13 @@ static int ParseCmdLine(const int argc,
         printf("  compile timestamp: %s %s\n",__DATE__,__TIME__);
         printf("  gcc version: %s\n",__VERSION__);
 #endif
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
         printf("  libewf support: YES (version %s)\n",LIBEWF_VERSION_STRING);
 #else
         printf("  libewf support: NO\n");
 #endif
-#ifdef HAVE_LIBAAF
-        printf("  libaaf support: YES\n");
+#ifdef WITH_LIBAFF
+        printf("  libaff support: YES (version %s)\n",af_version());
 #else
         printf("  libaaf support: NO\n");
 #endif
@@ -493,36 +452,17 @@ static int ParseCmdLine(const int argc,
     // Try to add "-o allow_other" to FUSE's cmd-line params
     if(CheckFuseAllowOther()==TRUE) {
       opts+=2;
-      *pppNargv=(char**)realloc(*pppNargv,opts*sizeof(char*));
-      if(*pppNargv==NULL) {
-        LOG_ERROR("Couldn't allocate memmory!\n")
-        return FALSE;
-      }
-      (*pppNargv)[opts-2]=(char*)malloc(3*sizeof(char)); // "-o\0"
-      (*pppNargv)[opts-1]=(char*)malloc(12*sizeof(char)); // "allow_other\0"
-      if((*pppNargv)[opts-2]==NULL || (*pppNargv)[opts-1]==NULL) {
-        LOG_ERROR("Couldn't allocate memmory!\n")
-        return FALSE;
-      }
-      strcpy((*pppNargv)[opts-2],"-o");
-      strcpy((*pppNargv)[opts-1],"allow_other");
+      XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+      XMOUNT_STRSET((*pppNargv)[opts-2],"-o")
+      XMOUNT_STRSET((*pppNargv)[opts-1],"allow_other")
     }
   }
 
   // Parse input image filename(s)
   while(i<(argc-1)) {
     files++;
-    (*pppFilenames)=(char**)realloc((*pppFilenames),files*sizeof(char*));
-    if((*pppFilenames)==NULL) {
-      LOG_ERROR("Couldn't allocate memmory for input image filename(s)!\n")
-      return FALSE;
-    }
-    (*pppFilenames)[files-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-    if((*pppFilenames)[files-1]==NULL) {
-      LOG_ERROR("Couldn't allocate memmory for input image filename(s)!\n")
-      return FALSE;
-    }
-    strncpy((*pppFilenames)[files-1],argv[i],strlen(argv[i])+1);
+    XMOUNT_REALLOC(*pppFilenames,char**,files*sizeof(char*))
+    XMOUNT_STRSET((*pppFilenames)[files-1],argv[i])
     i++;
   }
   if(files==0) {
@@ -534,24 +474,10 @@ static int ParseCmdLine(const int argc,
 
   // Extract mountpoint
   if(i==(argc-1)) {
-    (*ppMountpoint)=(char*)malloc((strlen(argv[argc-1])+1)*sizeof(char));
-    if((*ppMountpoint)==NULL) {
-      LOG_ERROR("Couldn't allocate memmory for mountpoint!\n")
-      return FALSE;
-    }
-    strncpy(*ppMountpoint,argv[argc-1],strlen(argv[argc-1])+1);
+    XMOUNT_STRSET(*ppMountpoint,argv[argc-1])
     opts++;
-    (*pppNargv)=(char**)realloc((*pppNargv),opts*sizeof(char*));
-    if((*pppNargv)==NULL) {
-      LOG_ERROR("Couldn't allocate memmory for mountpoint!\n")
-      return FALSE;
-    }
-    (*pppNargv)[opts-1]=(char*)malloc((strlen(argv[i])+1)*sizeof(char));
-    if((*pppNargv)[opts-1]==NULL) {
-      LOG_ERROR("Couldn't allocate memmory for mountpoint!\n")
-      return FALSE;
-    }
-    strncpy((*pppNargv)[opts-1],*ppMountpoint,strlen((*ppMountpoint))+1);
+    XMOUNT_REALLOC(*pppNargv,char**,opts*sizeof(char*))
+    XMOUNT_STRSET((*pppNargv)[opts-1],*ppMountpoint)
   } else {
     LOG_ERROR("No mountpoint specified!\n")
     PrintUsage(argv[0]);
@@ -580,120 +506,61 @@ static int ExtractVirtFileNames(char *pOrigName) {
   tmp=strrchr(pOrigName,'/');
   if(tmp!=NULL) pOrigName=tmp+1;
 
+  // Extract file extension
   tmp=strrchr(pOrigName,'.');
-  if(tmp==NULL) {
-    // Input image filename has no extension
-    // Alloc mem for leading '/', filename and extension (.dd or .vdi)
-    XMountConfData.pVirtualImagePath=
-      (char*)malloc((strlen(pOrigName)+6)*sizeof(char));
-    XMountConfData.pVirtualImageInfoPath=
-      (char*)malloc((strlen(pOrigName)+7)*sizeof(char));
-    if(XMountConfData.VirtImageType==TVirtImageType_VMDK ||
-       XMountConfData.VirtImageType==TVirtImageType_VMDKS)
-    {
-      // Alloc mem for VMDK descriptor file
-      XMountConfData.pVirtualVmdkPath=
-        (char*)malloc((strlen(pOrigName)+7)*sizeof(char));
-    }
-  } else {
-    // Extract base filename from input image filename
-    // Alloc mem for leading '/', filename and extension (.dd or .vdi)
-    XMountConfData.pVirtualImagePath=
-      (char*)malloc(((strlen(pOrigName)-strlen(tmp))+6)*sizeof(char));
-    XMountConfData.pVirtualImageInfoPath=
-      (char*)malloc(((strlen(pOrigName)-strlen(tmp))+7)*sizeof(char));
-    if(XMountConfData.VirtImageType==TVirtImageType_VMDK ||
-       XMountConfData.VirtImageType==TVirtImageType_VMDKS)
-    {
-      // Alloc mem for VMDK descriptor file
-      XMountConfData.pVirtualVmdkPath=
-        (char*)malloc(((strlen(pOrigName)-strlen(tmp))+7)*sizeof(char));
-    }
-  }
-  if(XMountConfData.pVirtualImagePath==NULL ||
-     XMountConfData.pVirtualImageInfoPath==NULL ||
-     ((XMountConfData.VirtImageType==TVirtImageType_VMDK ||
-       XMountConfData.VirtImageType==TVirtImageType_VMDKS) &&
-      XMountConfData.pVirtualVmdkPath==NULL))
-  {
-    LOG_ERROR("Couldn't alloc memmory!\n")
-    return FALSE;
-  }
+
   // Set leading '/'
-  (XMountConfData.pVirtualImagePath)[0]='/';
-  (XMountConfData.pVirtualImageInfoPath)[0]='/';
+  XMOUNT_STRSET(XMountConfData.pVirtualImagePath,"/")
+  XMOUNT_STRSET(XMountConfData.pVirtualImageInfoPath,"/")
   if(XMountConfData.VirtImageType==TVirtImageType_VMDK ||
      XMountConfData.VirtImageType==TVirtImageType_VMDKS)
   {
-    (XMountConfData.pVirtualVmdkPath)[0]='/';
+    XMOUNT_STRSET(XMountConfData.pVirtualVmdkPath,"/")
   }
+
   // Copy filename
   if(tmp==NULL) {
-    strcpy(&(XMountConfData.pVirtualImagePath[1]),pOrigName);
-    strcpy(&(XMountConfData.pVirtualImageInfoPath[1]),pOrigName);
+    // Input image filename has no extension
+    XMOUNT_STRAPP(XMountConfData.pVirtualImagePath,pOrigName)
+    XMOUNT_STRAPP(XMountConfData.pVirtualImageInfoPath,pOrigName)
     if(XMountConfData.VirtImageType==TVirtImageType_VMDK ||
        XMountConfData.VirtImageType==TVirtImageType_VMDKS)
     {
-      strcpy(&(XMountConfData.pVirtualVmdkPath[1]),pOrigName);
+      XMOUNT_STRAPP(XMountConfData.pVirtualVmdkPath,pOrigName)
     }
-    // Add file extensions
-    switch(XMountConfData.VirtImageType) {
-      case TVirtImageType_DD:
-        strcpy(&(XMountConfData.pVirtualImagePath[strlen(pOrigName)+1]),".dd");
-        break;
-      case TVirtImageType_VDI:
-        strcpy(&(XMountConfData.pVirtualImagePath[strlen(pOrigName)+1]),
-               ".vdi");
-        break;
-      case TVirtImageType_VMDK:
-      case TVirtImageType_VMDKS:
-        strcpy(&(XMountConfData.pVirtualImagePath[strlen(pOrigName)+1]),".dd");
-        strcpy(&(XMountConfData.pVirtualVmdkPath[strlen(pOrigName)+1]),".vmdk");
-        break;
-      default:
-        LOG_ERROR("Unknown virtual image type!\n")
-        return FALSE;
-    }
-    strcpy(&(XMountConfData.pVirtualImageInfoPath[strlen(pOrigName)+1]),
-               ".info");
+    XMOUNT_STRAPP(XMountConfData.pVirtualImageInfoPath,".info")
   } else {
-    strncpy(&(XMountConfData.pVirtualImagePath[1]),
-            pOrigName,
-            strlen(pOrigName)-strlen(tmp));
-    strncpy(&(XMountConfData.pVirtualImageInfoPath[1]),
-            pOrigName,
-            strlen(pOrigName)-strlen(tmp));
+    XMOUNT_STRNAPP(XMountConfData.pVirtualImagePath,pOrigName,
+                   strlen(pOrigName)-strlen(tmp))
+    XMOUNT_STRNAPP(XMountConfData.pVirtualImageInfoPath,pOrigName,
+                   strlen(pOrigName)-strlen(tmp))
     if(XMountConfData.VirtImageType==TVirtImageType_VMDK ||
        XMountConfData.VirtImageType==TVirtImageType_VMDKS)
     {
-      strncpy(&(XMountConfData.pVirtualVmdkPath[1]),
-              pOrigName,
-              strlen(pOrigName)-strlen(tmp));
+      XMOUNT_STRNAPP(XMountConfData.pVirtualVmdkPath,pOrigName,
+                     strlen(pOrigName)-strlen(tmp))
     }
-    // Add file extensions
-    switch(XMountConfData.VirtImageType) {
-      case TVirtImageType_DD:
-        strcpy(&(XMountConfData.pVirtualImagePath[(strlen(pOrigName)-strlen(tmp))+1]),
-               ".dd");
-        break;
-      case TVirtImageType_VDI:
-        strcpy(&(XMountConfData.pVirtualImagePath[(strlen(pOrigName)-strlen(tmp))+1]),
-               ".vdi");
-        break;
-      case TVirtImageType_VMDK:
-      case TVirtImageType_VMDKS:
-        strcpy(&(XMountConfData.pVirtualImagePath[(strlen(pOrigName)-strlen(tmp))+1]),
-               ".dd");
-        strcpy(&(XMountConfData.pVirtualVmdkPath[(strlen(pOrigName)-strlen(tmp))+1]),
-               ".vmdk");
-        break;
-      default:
-        LOG_ERROR("Unknown virtual image type!\n")
-        return FALSE;
-    }
-    strcpy(&(XMountConfData.pVirtualImageInfoPath[(strlen(pOrigName)-strlen(tmp))+1]),
-           ".info");
+    XMOUNT_STRAPP(XMountConfData.pVirtualImageInfoPath,".info")
   }
+
+  // Add virtual file extensions
+  switch(XMountConfData.VirtImageType) {
+    case TVirtImageType_DD:
+      XMOUNT_STRAPP(XMountConfData.pVirtualImagePath,".dd")
+      break;
+    case TVirtImageType_VDI:
+      XMOUNT_STRAPP(XMountConfData.pVirtualImagePath,".vdi")
+      break;
+    case TVirtImageType_VMDK:
+    case TVirtImageType_VMDKS:
+      XMOUNT_STRAPP(XMountConfData.pVirtualImagePath,".dd")
+      XMOUNT_STRAPP(XMountConfData.pVirtualVmdkPath,".vmdk")
+      break;
+    default:
+      LOG_ERROR("Unknown virtual image type!\n")
+      return FALSE;
+  }
+
   LOG_DEBUG("Set virtual image name to \"%s\"\n",
             XMountConfData.pVirtualImagePath)
   LOG_DEBUG("Set virtual image info name to \"%s\"\n",
@@ -723,7 +590,10 @@ static int GetOrigImageSize(uint64_t *size) {
 
   // When size was already queryed, use old value rather than regetting value
   // from disk
-  //if(XMountConfData.OrigImageSize!=0) return XMountConfData.OrigImageSize;
+  if(XMountConfData.OrigImageSize!=0) {
+    *size=XMountConfData.OrigImageSize;
+    return TRUE;
+  }
 
   // Now get size of original image
   switch(XMountConfData.OrigImageType) {
@@ -735,7 +605,7 @@ static int GetOrigImageSize(uint64_t *size) {
       }
       *size=ftello(hDdFile);
       break;
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
     case TOrigImageType_EWF:
       // Original image is an EWF file. Just query media size.
       if(libewf_get_media_size(hEwfFile,size)!=1) {
@@ -744,12 +614,10 @@ static int GetOrigImageSize(uint64_t *size) {
       }
       break;
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
     case TOrigImageType_AFF:
       // Original image is an AFF file.
-      // TODO: Implement AFF image type handling
-      LOG_ERROR("AFF image type handling not implemented!\n")
-      return FALSE;
+      *size=af_seek(hAffFile,0,SEEK_END);
       break;
 #endif
     default:
@@ -772,7 +640,10 @@ static int GetOrigImageSize(uint64_t *size) {
  *   "TRUE" on success, "FALSE" on error
  */
 static int GetVirtImageSize(uint64_t *size) {
-  //if(XMountConfData.VirtImageSize!=0) return XMountConfData.VirtImageSize;
+  if(XMountConfData.VirtImageSize!=0) {
+    *size=XMountConfData.VirtImageSize;
+    return TRUE;
+  }
 
   switch(XMountConfData.VirtImageType) {
     case TVirtImageType_VMDK:
@@ -839,6 +710,8 @@ static int GetOrigImageData(char *buf, off_t offset, size_t size) {
   switch(XMountConfData.OrigImageType) {
     case TOrigImageType_DD:
       // Original image is a DD file. Seek to offset and read ToRead bytes.
+      // TODO: Perhaps check whether it is cheaper to seek from current position
+      // to offset than seeking from beginning of the file
       if(fseeko(hDdFile,offset,SEEK_SET)!=0) {
         LOG_ERROR("Couldn't seek to offset %" PRIu64 "!\n",offset)
         return -1;
@@ -851,7 +724,7 @@ static int GetOrigImageData(char *buf, off_t offset, size_t size) {
       LOG_DEBUG("Read %zd bytes at offset %" PRIu64 " from DD file\n",
                 ToRead,offset)
       break;
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
     case TOrigImageType_EWF:
       // Original image is an EWF file. Seek to offset and read ToRead bytes.
       if(libewf_seek_offset(hEwfFile,offset)!=-1) {
@@ -868,12 +741,17 @@ static int GetOrigImageData(char *buf, off_t offset, size_t size) {
                 ToRead,offset)
       break;
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
     case TOrigImageType_AFF:
       // Original image is an AFF file.
-      // TODO: Implement AFF image type handling
-      LOG_ERROR("AFF image type handling not implemented!\n")
-      return -1;
+      af_seek(hAffFile,offset,SEEK_SET);
+      if(af_read(hAffFile,buf,ToRead)!=ToRead) {
+        LOG_ERROR("Couldn't read %zd bytes from offset %" PRIu64
+                  "!\n",ToRead,offset)
+        return -1;
+      }
+      LOG_DEBUG("Read %zd bytes at offset %" PRIu64 " from AFF file\n",
+                ToRead,offset)
       break;
 #endif
     default:
@@ -895,6 +773,7 @@ static int GetOrigImageData(char *buf, off_t offset, size_t size) {
  * Returns:
  *   Number of read bytes on success or "-1" on error
  */
+ /*
 static int GetVirtualVmdkData(char *buf, off_t offset, size_t size) {
   uint32_t len;
 
@@ -921,6 +800,7 @@ static int GetVirtualVmdkData(char *buf, off_t offset, size_t size) {
   }
   return size;
 }
+*/
 
 /*
  * GetVirtImageData:
@@ -939,7 +819,6 @@ static int GetVirtImageData(char *buf, off_t offset, size_t size) {
   uint64_t VirtImageSize;
   size_t ToRead=0;
   size_t CurToRead=0;
-  int64_t ret=0;
   off_t FileOff=offset;
   off_t BlockOff=0;
 
@@ -963,6 +842,10 @@ static int GetVirtImageData(char *buf, off_t offset, size_t size) {
 
   // Read virtual image type specific data
   switch(XMountConfData.VirtImageType) {
+    case TVirtImageType_DD:
+    case TVirtImageType_VMDK:
+    case TVirtImageType_VMDKS:
+      break;
     case TVirtImageType_VDI:
       if(FileOff<VdiFileHeaderSize) {
         if(FileOff+ToRead>VdiFileHeaderSize) CurToRead=VdiFileHeaderSize-FileOff;
@@ -1264,11 +1147,7 @@ static int SetVirtImageData(const char *buf, off_t offset, size_t size) {
       if(BlockOff!=0) {
         // Changed data does not begin at block boundry. Need to prepend
         // with data from virtual image file
-        buf2=(char*)malloc(BlockOff*sizeof(char));
-        if(buf2==NULL) {
-          LOG_ERROR("Couldn't allocate memmory!\n")
-          return -1;
-        }
+        XMOUNT_MALLOC(buf2,char*,BlockOff*sizeof(char))
         if(GetOrigImageData(buf2,FileOff-BlockOff,BlockOff)!=BlockOff) {
           LOG_ERROR("Couldn't read data from original image file!\n")
           return -1;
@@ -1295,13 +1174,9 @@ static int SetVirtImageData(const char *buf, off_t offset, size_t size) {
       if(BlockOff+CurToWrite!=CACHE_BLOCK_SIZE) {
         // Changed data does not end at block boundry. Need to append
         // with data from virtual image file
-        buf2=(char*)malloc((CACHE_BLOCK_SIZE-
-                           (BlockOff+CurToWrite))*sizeof(char));
+        XMOUNT_MALLOC(buf2,char*,(CACHE_BLOCK_SIZE-
+                                 (BlockOff+CurToWrite))*sizeof(char))
         memset(buf2,0,CACHE_BLOCK_SIZE-(BlockOff+CurToWrite));
-        if(buf2==NULL) {
-          LOG_ERROR("Couldn't allocate memmory!\n")
-          return -1;
-        }
         if((FileOff-BlockOff)+CACHE_BLOCK_SIZE>OrigImageSize) {
           // Original image is smaller than full cache block
           if(GetOrigImageData(buf2,
@@ -1440,7 +1315,7 @@ static int GetVirtFileAttr(const char *path, struct stat *stbuf) {
       stbuf->st_nlink=1;
       // Get virtual image info file size
       if(pVirtualVmdkFile!=NULL) {
-        stbuf->st_size=strlen(pVirtualVmdkFile);
+        stbuf->st_size=VirtualVmdkFileSize;
       } else stbuf->st_size=0;
     } else if(pVirtualVmdkLockDir!=NULL &&
               strcmp(path,pVirtualVmdkLockDir)==0)
@@ -1488,12 +1363,7 @@ static int CreateVirtDir(const char *path, mode_t mode) {
       sprintf(aVmdkLockDir,"%s.lck",XMountConfData.pVirtualVmdkPath);
       if(strcmp(path,aVmdkLockDir)==0) {
         LOG_DEBUG("Creating virtual directory \"%s\"\n",aVmdkLockDir)
-        pVirtualVmdkLockDir=(char*)malloc((strlen(aVmdkLockDir)+1)*sizeof(char));
-        if(pVirtualVmdkLockDir==NULL) {
-          LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkLockDir!\n")
-          return -1;
-        }
-        strcpy(pVirtualVmdkLockDir,aVmdkLockDir);
+        XMOUNT_STRSET(pVirtualVmdkLockDir,aVmdkLockDir)
         return 0;
       } else {
         LOG_ERROR("Attempt to create illegal directory \"%s\"!\n",path)
@@ -1504,12 +1374,7 @@ static int CreateVirtDir(const char *path, mode_t mode) {
               strncmp(path,pVirtualVmdkLockDir,strlen(pVirtualVmdkLockDir))==0)
     {
       LOG_DEBUG("Creating virtual directory \"%s\"\n",path)
-      pVirtualVmdkLockDir2=(char*)malloc((strlen(path)+1)*sizeof(char));
-      if(pVirtualVmdkLockDir2==NULL) {
-        LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkLockFile!\n")
-        return -1;
-      }
-      strcpy(pVirtualVmdkLockDir2,path);
+      XMOUNT_STRSET(pVirtualVmdkLockDir2,path)
       return 0;
     } else {
       LOG_ERROR("Attempt to create illegal directory \"%s\"!\n",path)
@@ -1544,12 +1409,7 @@ static int CreateVirtFile(const char *path,
      pVirtualVmdkLockDir!=NULL && pVirtualVmdkLockFileName==NULL)
   {
     LOG_DEBUG("Creating virtual file \"%s\"\n",path)
-    pVirtualVmdkLockFileName=(char*)malloc((strlen(path)+1)*sizeof(char));
-    if(pVirtualVmdkLockFileName==NULL) {
-      LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkLockFileName!\n")
-      return -1;
-    }
-    strcpy(pVirtualVmdkLockFileName,path);
+    XMOUNT_STRSET(pVirtualVmdkLockFileName,path);
     return 0;
   } else {
     LOG_ERROR("Attempt to create illegal file \"%s\"\n",path)
@@ -1738,7 +1598,7 @@ static int ReadVirtFile(const char *path,
     }
   } else if(strcmp(path,XMountConfData.pVirtualVmdkPath)==0) {
     // Read data from virtual vmdk file
-    len=strlen(pVirtualVmdkFile);
+    len=VirtualVmdkFileSize;
     if(offset<len) {
       if(offset+size>len) {
         LOG_DEBUG("Attempt to read past EOF of virtual vmdk file\n")
@@ -1751,14 +1611,14 @@ static int ReadVirtFile(const char *path,
       LOG_DEBUG("Read %" PRIu64 " bytes at offset %" PRIu64
                 " from virtual vmdk file\n",size,offset)
     } else {
-      LOG_DEBUG("Attempt to read past EOF of virtual vmdk file\n");
+      LOG_DEBUG("Attempt to read behind EOF of virtual vmdk file\n");
       return 0;
     }
   } else if(pVirtualVmdkLockFileName!=NULL &&
             strcmp(path,pVirtualVmdkLockFileName)==0)
   {
     // Read data from virtual lock file
-    len=pVirtualVmdkLockFileDataSize;
+    len=VirtualVmdkLockFileDataSize;
     if(offset<len) {
       if(offset+size>len) {
         LOG_DEBUG("Attempt to read past EOF of virtual vmdk lock file\n")
@@ -1801,12 +1661,11 @@ static int RenameVirtFile(const char *path, const char *npath) {
     if(pVirtualVmdkLockFileName!=NULL &&
        strcmp(path,pVirtualVmdkLockFileName)==0)
     {
-      pVirtualVmdkLockFileName=(char*)realloc(pVirtualVmdkLockFileName,
-                                              (strlen(npath)+1)*sizeof(char));
-      if(pVirtualVmdkLockFileName==NULL) {
-        LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkLockFileName!\n")
-        return -1;
-      }
+      LOG_DEBUG("Renaming virtual lock file from \"%s\" to \"%s\"\n",
+                pVirtualVmdkLockFileName,
+                npath)
+      XMOUNT_REALLOC(pVirtualVmdkLockFileName,char*,
+                     (strlen(npath)+1)*sizeof(char));
       strcpy(pVirtualVmdkLockFileName,npath);
       return 0;
     }
@@ -1830,12 +1689,14 @@ static int DeleteVirtDir(const char *path) {
      XMountConfData.VirtImageType==TVirtImageType_VMDKS)
   {
     if(pVirtualVmdkLockDir!=NULL && strcmp(path,pVirtualVmdkLockDir)==0) {
+      LOG_DEBUG("Deleting virtual lock dir \"%s\"\n",pVirtualVmdkLockDir)
       free(pVirtualVmdkLockDir);
       pVirtualVmdkLockDir=NULL;
       return 0;
     } else if(pVirtualVmdkLockDir2!=NULL &&
               strcmp(path,pVirtualVmdkLockDir2)==0)
     {
+      LOG_DEBUG("Deleting virtual lock dir \"%s\"\n",pVirtualVmdkLockDir)
       free(pVirtualVmdkLockDir2);
       pVirtualVmdkLockDir2=NULL;
       return 0;
@@ -1862,10 +1723,12 @@ static int DeleteVirtFile(const char *path) {
     if(pVirtualVmdkLockFileName!=NULL &&
        strcmp(path,pVirtualVmdkLockFileName)==0)
     {
+      LOG_DEBUG("Deleting virtual file \"%s\"\n",pVirtualVmdkLockFileName)
       free(pVirtualVmdkLockFileName);
       free(pVirtualVmdkLockFileData);
       pVirtualVmdkLockFileName=NULL;
       pVirtualVmdkLockFileData=NULL;
+      VirtualVmdkLockFileDataSize=0;
       return 0;
     }
   }
@@ -1954,20 +1817,17 @@ static int WriteVirtFile(const char *path,
     pthread_mutex_unlock(&mutex_image_rw);
   } else if(strcmp(path,XMountConfData.pVirtualVmdkPath)==0) {
     pthread_mutex_lock(&mutex_image_rw);
-    len=strlen(pVirtualVmdkFile);
+    len=VirtualVmdkFileSize;
     if((offset+size)>len) {
       // Enlarge or create buffer if needed
       if(len==0) {
         len=offset+size;
-        pVirtualVmdkFile=(char*)malloc(len*sizeof(char));
+        XMOUNT_MALLOC(pVirtualVmdkFile,char*,len*sizeof(char))
       } else {
         len=offset+size;
-        pVirtualVmdkFile=(char*)realloc(pVirtualVmdkFile,len*sizeof(char));
+        XMOUNT_REALLOC(pVirtualVmdkFile,char*,len*sizeof(char))
       }
-      if(pVirtualVmdkFile==NULL) {
-        LOG_ERROR("Couldn't alloc memmory for pVirtualVmdkFile!\n")
-        return 0;
-      }
+      VirtualVmdkFileSize=offset+size;
     }
     // Copy data to buffer
     memcpy(pVirtualVmdkFile+offset,buf,size);
@@ -1976,21 +1836,16 @@ static int WriteVirtFile(const char *path,
             strcmp(path,pVirtualVmdkLockFileName)==0)
   {
     pthread_mutex_lock(&mutex_image_rw);
-    if((offset+size)>pVirtualVmdkLockFileDataSize) {
+    if((offset+size)>VirtualVmdkLockFileDataSize) {
       // Enlarge or create buffer if needed
-      if(pVirtualVmdkLockFileDataSize==0) {
-        pVirtualVmdkLockFileDataSize=offset+size;
-        pVirtualVmdkLockFileData=(char*)malloc(pVirtualVmdkLockFileDataSize*
-                                               sizeof(char));
+      if(VirtualVmdkLockFileDataSize==0) {
+        VirtualVmdkLockFileDataSize=offset+size;
+        XMOUNT_MALLOC(pVirtualVmdkLockFileData,char*,
+                      VirtualVmdkLockFileDataSize*sizeof(char))
       } else {
-        pVirtualVmdkLockFileDataSize=offset+size;
-        pVirtualVmdkLockFileData=(char*)realloc(pVirtualVmdkLockFileData,
-                                                pVirtualVmdkLockFileDataSize*
-                                                  sizeof(char));
-      }
-      if(pVirtualVmdkLockFileData==NULL) {
-        LOG_ERROR("Couldn't alloc memory for pVirtualVmdkLockFileData!\n")
-        return 0;
+        VirtualVmdkLockFileDataSize=offset+size;
+        XMOUNT_REALLOC(pVirtualVmdkLockFileData,char*,
+                       VirtualVmdkLockFileDataSize*sizeof(char))
       }
     }
     // Copy data to buffer
@@ -2022,13 +1877,9 @@ static int WriteVirtFile(const char *path,
  */
 static int CalculateInputImageHash(uint64_t *pHashLow, uint64_t *pHashHigh) {
   char hash[16];
-  int i;
   md5_state_t md5_state;
-  char *buf=(char*)malloc(HASH_AMOUNT*sizeof(char));
-  if(buf==NULL) {
-    LOG_ERROR("Couldn't alloc memory!\n")
-    return FALSE;
-  }
+  char *buf;
+  XMOUNT_MALLOC(buf,char*,HASH_AMOUNT*sizeof(char))
   size_t read_data=GetOrigImageData(buf,0,HASH_AMOUNT);
   if(read_data>0) {
     // Calculate MD5 hash
@@ -2081,12 +1932,9 @@ static int InitVirtVdiHeader() {
             VdiBlockMapSize,
             VdiBlockMapSize)
 
-  // Allocate memmory for vdi header and block map
+  // Allocate memory for vdi header and block map
   VdiFileHeaderSize=sizeof(TVdiFileHeader)+VdiBlockMapSize;
-  if((pVdiFileHeader=malloc(VdiFileHeaderSize))==NULL) {
-    LOG_ERROR("Couldn't allocate memmory for TVdiFileHeader!\n");
-    return FALSE;
-  }
+  XMOUNT_MALLOC(pVdiFileHeader,pTVdiFileHeader,VdiFileHeaderSize)
   memset(pVdiFileHeader,0,VdiFileHeaderSize);
   pVdiBlockMap=((void*)pVdiFileHeader)+sizeof(TVdiFileHeader);
 
@@ -2122,10 +1970,16 @@ static int InitVirtVdiHeader() {
   //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_l))+4)=rand();
   //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_h)))=rand();
   //*((uint32_t*)(&(pVdiFileHeader->uuidCreate_h))+4)=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidModify_l)))=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidModify_l))+4)=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidModify_h)))=rand();
-  *((uint32_t*)(&(pVdiFileHeader->uuidModify_h))+4)=rand();
+
+#define rand64(var) {              \
+  *((uint32_t*)&(var))=rand();     \
+  *(((uint32_t*)&(var))+1)=rand(); \
+}
+
+  rand64(pVdiFileHeader->uuidModify_l);
+  rand64(pVdiFileHeader->uuidModify_h);
+
+#undef rand64
 
   // Generate block map
   i=0;
@@ -2152,10 +2006,6 @@ static int InitVirtVdiHeader() {
 static int InitVirtualVmdkFile() {
   uint64_t ImageSize=0;
   uint64_t ImageBlocks=0;
-  uint64_t ImageCylinders=0;
-  int ImageHeads=0;
-  int ImageSectors=0;
-  uint64_t tmp=0;
   char buf[500];
 
   // Get original image size
@@ -2203,13 +2053,10 @@ static int InitVirtualVmdkFile() {
 
 #undef VMDK_DESC_FILE
 
-  pVirtualVmdkFile=(char*)malloc((strlen(buf)+1)*sizeof(char));
-  if(pVirtualVmdkFile==NULL) {
-    LOG_ERROR("Couldn't alloc memmory for vitual VMDK file!\n")
-    return FALSE;
-  }
-
-  strcpy(pVirtualVmdkFile,buf);
+  // Do not use XMOUNT_STRSET here to avoid adding '\0' to the buffer!
+  XMOUNT_MALLOC(pVirtualVmdkFile,char*,strlen(buf))
+  strncpy(pVirtualVmdkFile,buf,strlen(buf));
+  VirtualVmdkFileSize=strlen(buf);
 
   return TRUE;
 }
@@ -2226,19 +2073,10 @@ static int InitVirtualVmdkFile() {
  */
 static int InitVirtImageInfoFile() {
   char buf[200];
-  uint8_t md5_buf[16];
   int ret;
 
-#define M_CHECK_ALLOC { \
-  if(pVirtualImageInfoFile==NULL) { \
-    LOG_ERROR("Couldn't allocate memmory!\n"); \
-    return FALSE; \
-  } \
-}
-
   // Add static header to file
-  pVirtualImageInfoFile=(char*)malloc((strlen(IMAGE_INFO_HEADER)+1));
-  M_CHECK_ALLOC
+  XMOUNT_MALLOC(pVirtualImageInfoFile,char*,(strlen(IMAGE_INFO_HEADER)+1))
   strncpy(pVirtualImageInfoFile,IMAGE_INFO_HEADER,strlen(IMAGE_INFO_HEADER)+1);
 
   switch(XMountConfData.OrigImageType) {
@@ -2248,19 +2086,11 @@ static int InitVirtImageInfoFile() {
       // TODO: Add infos to virtual image info file
       break;
 
-#ifdef HAVE_LIBEWF
-  #ifdef LIBEWF_BETA
-
-    case TOrigImageType_EWF:
-      break;
-
-  #else
-
+#ifdef WITH_LIBEWF
 #define M_SAVE_VALUE(DESC) { \
   if(ret==1) {             \
-    pVirtualImageInfoFile=(char*)realloc(pVirtualImageInfoFile, \
-      (strlen(pVirtualImageInfoFile)+strlen(buf)+strlen(DESC)+2)); \
-    M_CHECK_ALLOC \
+    XMOUNT_REALLOC(pVirtualImageInfoFile,char*, \
+      (strlen(pVirtualImageInfoFile)+strlen(buf)+strlen(DESC)+2)) \
     strncpy((pVirtualImageInfoFile+strlen(pVirtualImageInfoFile)),DESC,strlen(DESC)+1); \
     strncpy((pVirtualImageInfoFile+strlen(pVirtualImageInfoFile)),buf,strlen(buf)+1); \
     strncpy((pVirtualImageInfoFile+strlen(pVirtualImageInfoFile)),"\n",2); \
@@ -2269,7 +2099,6 @@ static int InitVirtImageInfoFile() {
     return FALSE; \
   } \
 }
-
     case TOrigImageType_EWF:
       // Original image is an EWF file. Extract various infos from ewf file and
       // add them to the virtual image info file content.
@@ -2297,24 +2126,18 @@ static int InitVirtImageInfoFile() {
       M_SAVE_VALUE("SHA1 hash: ")
       break;
 #undef M_SAVE_VALUE
-
-  #endif
 #endif
-#ifdef HAVE_LIBAFF
+
+#ifdef WITH_LIBAFF
     case TOrigImageType_AFF:
       // Original image is an AFF file.
-      // TODO: Implement AFF image type handling
-      LOG_ERROR("AFF image type handling not implemented!\n")
-      return FALSE;
+      // TODO: Extract some infos from AFF file to add to our info file
       break;
 #endif
     default:
       LOG_ERROR("Unsupported input image type!\n")
       return FALSE;
   }
-
-#undef M_CHECK_ALLOC
-
   return TRUE;
 }
 
@@ -2353,7 +2176,7 @@ static int InitCacheFile() {
       }
     }
   } else {
-    // Overwrite any existing cache file or create a new one
+    // Overwrite existing cache file or create a new one
     hCacheFile=(FILE*)fopen64(XMountConfData.pCacheFile,"wb+");
     if(hCacheFile==NULL) {
       LOG_ERROR("Couldn't open cache file \"%s\"!\n",
@@ -2421,12 +2244,8 @@ static int InitCacheFile() {
           LOG_ERROR("Couldn't seek to beginning of cache file!\n")
           return FALSE;
         }
-        // Alloc memmory for header and block index
-        pCacheFileHeader=(pTCacheFileHeader)malloc(CacheFileHeaderSize);
-        if(pCacheFileHeader==NULL) {
-          LOG_ERROR("Couldn't alloc memmory for cache file header!\n")
-          return FALSE;
-        }
+        // Alloc memory for header and block index
+        XMOUNT_MALLOC(pCacheFileHeader,pTCacheFileHeader,CacheFileHeaderSize)
         memset(pCacheFileHeader,0,CacheFileHeaderSize);
         // Read header and block index from file
         if(fread(pCacheFileHeader,CacheFileHeaderSize,1,hCacheFile)!=1) {
@@ -2451,12 +2270,8 @@ static int InitCacheFile() {
   } else {
     // New cache file, generate a new block header
     LOG_DEBUG("Cache file is empty. Generating new block header\n");
-    // Alloc memmory for header and block index
-    pCacheFileHeader=(pTCacheFileHeader)malloc(CacheFileHeaderSize);
-    if(pCacheFileHeader==NULL) {
-      LOG_ERROR("Couldn't alloc memmory for cache file header!\n")
-      return FALSE;
-    }
+    // Alloc memory for header and block index
+    XMOUNT_MALLOC(pCacheFileHeader,pTCacheFileHeader,CacheFileHeaderSize)
     memset(pCacheFileHeader,0,CacheFileHeaderSize);
     pCacheFileHeader->FileSignature=CACHE_FILE_SIGNATURE;
     pCacheFileHeader->CacheFileVersion=CUR_CACHE_FILE_VERSION;
@@ -2522,12 +2337,15 @@ int main(int argc, char *argv[])
   XMountConfData.VirtImageType=TVirtImageType_DD;
   XMountConfData.Debug=FALSE;
   XMountConfData.pVirtualImagePath=NULL;
+  XMountConfData.pVirtualVmdkPath=NULL;
   XMountConfData.pVirtualImageInfoPath=NULL;
   XMountConfData.Writable=FALSE;
   XMountConfData.OverwriteCache=FALSE;
   XMountConfData.pCacheFile=NULL;
   XMountConfData.OrigImageSize=0;
   XMountConfData.VirtImageSize=0;
+  XMountConfData.InputHashLo=0;
+  XMountConfData.InputHashHi=0;
 
   // Parse command line options
   if(!ParseCmdLine(argc,
@@ -2556,27 +2374,20 @@ int main(int argc, char *argv[])
     printf("\n");
   }
 
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
   // Check for valid ewf files
   if(XMountConfData.OrigImageType==TOrigImageType_EWF) {
     for(i=0;i<InputFilenameCount;i++) {
-  #ifdef LIBEWF_BETA
-      if(libewf_check_file_signature(ppInputFilenames[i],&pLibEwfError)!=1) {
-        LOG_ERROR("File \"%s\" isn't a valid ewf file!\n",ppInputFilenames[i])
-        return 1;
-      }
-  #else
       if(libewf_check_file_signature(ppInputFilenames[i])!=1) {
         LOG_ERROR("File \"%s\" isn't a valid ewf file!\n",ppInputFilenames[i])
         return 1;
       }
-  #endif
     }
   }
 #endif
 
   // TODO: Check if mountpoint is a valid dir
-  
+
   // Init mutexes
   pthread_mutex_init(&mutex_image_rw,NULL);
   pthread_mutex_init(&mutex_info_read,NULL);
@@ -2603,7 +2414,7 @@ int main(int argc, char *argv[])
         return 1;
       }
       break;
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
     case TOrigImageType_EWF:
       // Input image is an EWF file or glob
       hEwfFile=libewf_open(ppInputFilenames,
@@ -2620,13 +2431,18 @@ int main(int argc, char *argv[])
       }
       break;
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
     case TOrigImageType_AFF:
       // Input image is an AFF file
-      // TODO: Handle AFF image type
-      LOG_ERROR("AFF image type handling isn't implemented!\n")
-      return 1;
-      //hAffFile=af_open(ppInputFilenames[0],
+      hAffFile=af_open(ppInputFilenames[0],O_RDONLY,0);
+      if(!hAffFile) {
+        LOG_ERROR("Couldn't open AFF file!\n")
+        return 1;
+      }
+      if(af_cannot_decrypt(hAffFile)) {
+        LOG_ERROR("Encrypted AFF input images aren't supported yet!\n")
+        return 1;
+      }
       break;
 #endif
     default:
@@ -2642,7 +2458,7 @@ int main(int argc, char *argv[])
     LOG_ERROR("Couldn't calculate partial hash of input image file!\n")
     return 1;
   }
-  
+
   if(XMountConfData.Debug==TRUE) {
     LOG_DEBUG("Partial MD5 hash of input image file: ")
     for(i=0;i<8;i++) printf("%02hhx",
@@ -2667,6 +2483,8 @@ int main(int argc, char *argv[])
 
   // Do some virtual image type specific initialisations
   switch(XMountConfData.VirtImageType) {
+    case TVirtImageType_DD:
+      break;
     case TVirtImageType_VDI:
       // When mounting as VDI, we need to construct a vdi header
       if(!InitVirtVdiHeader()) {
@@ -2706,12 +2524,12 @@ int main(int argc, char *argv[])
     case TOrigImageType_DD:
       fclose(hDdFile);
       break;
-#ifdef HAVE_LIBEWF
+#ifdef WITH_LIBEWF
     case TOrigImageType_EWF:
       libewf_close(hEwfFile);
       break;
 #endif
-#ifdef HAVE_LIBAFF
+#ifdef WITH_LIBAFF
     case TOrigImageType_AFF:
       af_close(hAffFile);
       break;
@@ -2726,7 +2544,7 @@ int main(int argc, char *argv[])
     free(pCacheFileHeader);
   }
 
-  // Free allocated memmory
+  // Free allocated memory
   if(XMountConfData.VirtImageType==TVirtImageType_VDI) {
     // Free constructed VDI header
     free(pVdiFileHeader);
@@ -2834,7 +2652,7 @@ int main(int argc, char *argv[])
               cached
   20090331: v0.2.2 released (Internal release)
             * Further changes to semaphores to fix write support bug.
-  20090410: v0.2.3 released 
+  20090410: v0.2.3 released
             * Reverted most of the fixes from v0.2.1 and v0.2.2 as those did not
               solve the write support bug.
             * Removed all semaphores
@@ -2842,7 +2660,7 @@ int main(int argc, char *argv[])
               info file.
   20090508: * Configure script will now exit when needed libraries aren't found
             * Added support for newest libewf beta version 20090506 as it seems
-              to reduce memmory usage when working with EWF files by about 1/2.
+              to reduce memory usage when working with EWF files by about 1/2.
             * Added LIBEWF_BETA define to adept source to new libewf API.
             * Added function InitVirtualVmdkFile to build a VmWare virtual disk
               descriptor file.
@@ -2881,4 +2699,34 @@ int main(int argc, char *argv[])
               used as VDI creation UUID and will later be used to match cache
               files to input images.
   20090724: v0.3.2 released
+  20090725: v0.4.0 released
+            * Added AFF input image support.
+            * Due to various problems with libewf and libaff packages (Mainly
+              in Debian and Ubuntu), I decided to include them into xmount's
+              source tree and link them in statically. This has the advantage
+              that I can use whatever version I want.
+  20090727: v0.4.1 released
+            * Added again the ability to compile xmount with shared libs as the
+              Debian folks don't like the static ones :)
+  20090812: * Added TXMountConfData.OrigImageSize and
+              TXMountConfData.VirtImageSize to save the size of the input and
+              output image in order to avoid regetting it always from disk.
+  20090814: * Replaced all malloc and realloc occurences with the two macros
+              XMOUNT_MALLOC and XMOUNT_REALLOC.
+  20090816: * Replaced where applicable all occurences of str(n)cpy or
+              alike with their corresponding macros XMOUNT_STRSET, XMOUNT_STRCPY
+              and XMOUNT_STRNCPY pendants.
+  20090907: v0.4.2 released
+            * Fixed a bug in VMDK lock file access. VirtualVmdkLockFileDataSize
+              wasn't reset to 0 when the file was deleted.
+            * Fixed a bug in VMDK descriptor file access. Had to add
+              VirtualVmdkFileSize to track the size of this file as strlen was
+              a bad idea :).
+  20100324: v0.4.3 released
+            * Changed all header structs to prevent different sizes on i386 and
+              amd64. See xmount.h for more details.
+  20100810: v0.4.4 released
+            * Found a bug in InitVirtVdiHeader(). The 64bit values were
+              addressed incorrectly while filled with rand(). This leads to an
+              error message when trying to add a VDI file to VirtualBox 3.2.8.
 */

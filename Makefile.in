@@ -45,12 +45,13 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = config.h
 CONFIG_CLEAN_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)"
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)"
 binPROGRAMS_INSTALL = $(INSTALL_PROGRAM)
 PROGRAMS = $(bin_PROGRAMS)
 am_xmount_OBJECTS = xmount-md5.$(OBJEXT) xmount-xmount.$(OBJEXT)
 xmount_OBJECTS = $(am_xmount_OBJECTS)
-xmount_LDADD = $(LDADD)
+xmount_DEPENDENCIES = libaff/lib/.libs/libafflib.a \
+	libewf/libewf/.libs/libewf.a
 xmount_LINK = $(CCLD) $(xmount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 DEFAULT_INCLUDES = -I.@am__isrc@
@@ -62,6 +63,9 @@ CCLD = $(CC)
 LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 SOURCES = $(xmount_SOURCES)
 DIST_SOURCES = $(xmount_SOURCES)
+man1dir = $(mandir)/man1
+NROFF = nroff
+MANS = $(man_MANS)
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -102,7 +106,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 LDFLAGS = @LDFLAGS@
 LIBOBJS = @LIBOBJS@
-LIBS = @LIBS@
+LIBS = @LIBS@ $(fuse_LIBS)
 LTLIBOBJS = @LTLIBOBJS@
 MAKEINFO = @MAKEINFO@
 MKDIR_P = @MKDIR_P@
@@ -114,6 +118,7 @@ PACKAGE_STRING = @PACKAGE_STRING@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
+PKG_CONFIG = @PKG_CONFIG@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
@@ -136,6 +141,8 @@ datarootdir = @datarootdir@
 docdir = @docdir@
 dvidir = @dvidir@
 exec_prefix = @exec_prefix@
+fuse_CFLAGS = @fuse_CFLAGS@
+fuse_LIBS = @fuse_LIBS@
 host_alias = @host_alias@
 htmldir = @htmldir@
 includedir = @includedir@
@@ -160,8 +167,11 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
+man_MANS = xmount.1
 xmount_SOURCES = md5.c xmount.c
-xmount_CFLAGS = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE
+xmount_CFLAGS = -fno-strict-aliasing -D_LARGEFILE64_SOURCE $(fuse_CFLAGS)
+# Link against the not installed static libaff and libewf
+xmount_LDADD = libaff/lib/.libs/libafflib.a libewf/libewf/.libs/libewf.a -lstdc++
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -294,6 +304,51 @@ xmount-xmount.obj: xmount.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='xmount.c' object='xmount-xmount.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(xmount_CFLAGS) $(CFLAGS) -c -o xmount-xmount.obj `if test -f 'xmount.c'; then $(CYGPATH_W) 'xmount.c'; else $(CYGPATH_W) '$(srcdir)/xmount.c'; fi`
+install-man1: $(man1_MANS) $(man_MANS)
+	@$(NORMAL_INSTALL)
+	test -z "$(man1dir)" || $(MKDIR_P) "$(DESTDIR)$(man1dir)"
+	@list='$(man1_MANS) $(dist_man1_MANS) $(nodist_man1_MANS)'; \
+	l2='$(man_MANS) $(dist_man_MANS) $(nodist_man_MANS)'; \
+	for i in $$l2; do \
+	  case "$$i" in \
+	    *.1*) list="$$list $$i" ;; \
+	  esac; \
+	done; \
+	for i in $$list; do \
+	  if test -f $$i; then file=$$i; \
+	  else file=$(srcdir)/$$i; fi; \
+	  ext=`echo $$i | sed -e 's/^.*\\.//'`; \
+	  case "$$ext" in \
+	    1*) ;; \
+	    *) ext='1' ;; \
+	  esac; \
+	  inst=`echo $$i | sed -e 's/\\.[0-9a-z]*$$//'`; \
+	  inst=`echo $$inst | sed -e 's/^.*\///'`; \
+	  inst=`echo $$inst | sed '$(transform)'`.$$ext; \
+	  echo " $(INSTALL_DATA) '$$file' '$(DESTDIR)$(man1dir)/$$inst'"; \
+	  $(INSTALL_DATA) "$$file" "$(DESTDIR)$(man1dir)/$$inst"; \
+	done
+uninstall-man1:
+	@$(NORMAL_UNINSTALL)
+	@list='$(man1_MANS) $(dist_man1_MANS) $(nodist_man1_MANS)'; \
+	l2='$(man_MANS) $(dist_man_MANS) $(nodist_man_MANS)'; \
+	for i in $$l2; do \
+	  case "$$i" in \
+	    *.1*) list="$$list $$i" ;; \
+	  esac; \
+	done; \
+	for i in $$list; do \
+	  ext=`echo $$i | sed -e 's/^.*\\.//'`; \
+	  case "$$ext" in \
+	    1*) ;; \
+	    *) ext='1' ;; \
+	  esac; \
+	  inst=`echo $$i | sed -e 's/\\.[0-9a-z]*$$//'`; \
+	  inst=`echo $$inst | sed -e 's/^.*\///'`; \
+	  inst=`echo $$inst | sed '$(transform)'`.$$ext; \
+	  echo " rm -f '$(DESTDIR)$(man1dir)/$$inst'"; \
+	  rm -f "$(DESTDIR)$(man1dir)/$$inst"; \
+	done
 
 ID: $(HEADERS) $(SOURCES) $(LISP) $(TAGS_FILES)
 	list='$(SOURCES) $(HEADERS) $(LISP) $(TAGS_FILES)'; \
@@ -475,9 +530,9 @@ distcleancheck: distclean
 	       exit 1; } >&2
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS) config.h
+all-am: Makefile $(PROGRAMS) $(MANS) config.h
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -525,7 +580,7 @@ info: info-am
 
 info-am:
 
-install-data-am:
+install-data-am: install-man
 
 install-dvi: install-dvi-am
 
@@ -535,7 +590,7 @@ install-html: install-html-am
 
 install-info: install-info-am
 
-install-man:
+install-man: install-man1
 
 install-pdf: install-pdf-am
 
@@ -562,7 +617,9 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS
+uninstall-am: uninstall-binPROGRAMS uninstall-man
+
+uninstall-man: uninstall-man1
 
 .MAKE: install-am install-strip
 
@@ -575,11 +632,12 @@ uninstall-am: uninstall-binPROGRAMS
 	install-binPROGRAMS install-data install-data-am install-dvi \
 	install-dvi-am install-exec install-exec-am install-html \
 	install-html-am install-info install-info-am install-man \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
-	tags uninstall uninstall-am uninstall-binPROGRAMS
+	install-man1 install-pdf install-pdf-am install-ps \
+	install-ps-am install-strip installcheck installcheck-am \
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
+	ps ps-am tags uninstall uninstall-am uninstall-binPROGRAMS \
+	uninstall-man uninstall-man1
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

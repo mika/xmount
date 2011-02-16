@@ -84,7 +84,7 @@ typedef struct TXMountConfData {
   /** Partial MD5 hash of input image */
   uint64_t InputHashLo;
   uint64_t InputHashHi;
-} TXMountConfData;
+} __attribute__ ((packed)) TXMountConfData;
 
 /*
  * VDI Binary File Header structure
@@ -160,7 +160,7 @@ typedef struct TVdiFileHeader {
   uint64_t padding4;
   uint64_t padding5;
   uint64_t padding6;
-} TVdiFileHeader, *pTVdiFileHeader;
+} __attribute__ ((packed)) TVdiFileHeader, *pTVdiFileHeader;
 
 //    /** The way the UUID is declared by the DCE specification. */
 //    struct
@@ -176,12 +176,17 @@ typedef struct TVdiFileHeader {
 /*
  * Cache file block index array element
  */
+#ifdef __LP64__
+  #define CACHE_BLOCK_FREE 0xFFFFFFFFFFFFFFFF
+#else
+  #define CACHE_BLOCK_FREE 0xFFFFFFFFFFFFFFFFLL 
+#endif
 typedef struct TCacheFileBlockIndex {
   /** Set to 1 if block is assigned (This block has data in cache file) */
   uint32_t Assigned;
   /** Offset to data in cache file */
   uint64_t off_data;
-} TCacheFileBlockIndex, *pTCacheFileBlockIndex;
+} __attribute__ ((packed)) TCacheFileBlockIndex, *pTCacheFileBlockIndex;
 
 /*
  * Cache file header structures
@@ -220,7 +225,7 @@ typedef struct TCacheFileHeader {
   uint64_t pVmdkFile;
   /** Padding until offset 512 to ease further additions */
   char HeaderPadding[444];
-} TCacheFileHeader, *pTCacheFileHeader;
+} __attribute__ ((packed)) TCacheFileHeader, *pTCacheFileHeader;
 
 // Old v1 header
 typedef struct TCacheFileHeader_v1 {
@@ -240,13 +245,53 @@ typedef struct TCacheFileHeader_v1 {
 } TCacheFileHeader_v1, *pTCacheFileHeader_v1;
 
 /*
- * Some macros to ease debugging and error reporting
+ * Macros to ease debugging and error reporting
  */
 #define LOG_ERROR(...) \
   LogMessage("ERROR",(char*)__FUNCTION__,__LINE__,__VA_ARGS__);
 #define LOG_DEBUG(...) { \
   if(XMountConfData.Debug) \
     LogMessage("DEBUG",(char*)__FUNCTION__,__LINE__,__VA_ARGS__); \
+}
+
+/*
+ * Macros to alloc or realloc memory and check whether it worked
+ */
+#define XMOUNT_MALLOC(var,var_type,size) { \
+  (var)=(var_type)malloc(size); \
+  if((var)==NULL) { \
+    LOG_ERROR("Couldn't allocate memmory!\n"); \
+    exit(1); \
+  } \
+}
+#define XMOUNT_REALLOC(var,var_type,size) { \
+  (var)=(var_type)realloc((var),size); \
+  if((var)==NULL) { \
+    LOG_ERROR("Couldn't allocate memmory!\n"); \
+    exit(1); \
+  } \
+}
+
+/*
+ * Macros for some often used string functions
+ */
+#define XMOUNT_STRSET(var1,var2) { \
+  XMOUNT_MALLOC(var1,char*,strlen(var2)+1) \
+  strcpy(var1,var2); \
+}
+#define XMOUNT_STRNSET(var1,var2,size) { \
+  XMOUNT_MALLOC(var1,char*,(size)+1) \
+  strncpy(var1,var2,size); \
+  (var1)[size]='\0'; \
+}
+#define XMOUNT_STRAPP(var1,var2) { \
+  XMOUNT_REALLOC(var1,char*,strlen(var1)+strlen(var2)+1) \
+  strcpy((var1)+strlen(var1),var2); \
+}
+#define XMOUNT_STRNAPP(var1,var2,size) { \
+  XMOUNT_REALLOC(var1,char*,strlen(var1)+(size)+1) \
+  (var1)[strlen(var1)+(size)]='\0'; \
+  strncpy((var1)+strlen(var1),var2,size); \
 }
 
 /*
@@ -269,4 +314,9 @@ typedef struct TCacheFileHeader_v1 {
               cache virtual VMDK file and makes room for further additions so
               current cache file version 2 cache files can be easily converted
               to newer ones.
+  20090814: * Added XMOUNT_MALLOC and XMOUNT_REALLOC macros.
+  20090816: * Added XMOUNT_STRSET, XMOUNT_STRNSET, XMOUNT_STRAPP and
+              XMOUNT_STRNAPP macros.
+  20100324: * Added "__attribute__ ((packed))" to all header structs to prevent
+              different sizes on i386 and amd64.
 */
