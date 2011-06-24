@@ -1,3 +1,13 @@
+xmount (0.4.5-1) unstable; urgency=low
+
+  * [5ec3492] Merging upstream version 0.4.5.
+  * [feac9cb] Bump Standards-Version to 3.9.2.
+  * [eb93b4a] Add libafflib-dev to Build-Depends.
+  * [e44de3b] Add pkg-config to Build-Depends.
+  * [3c16a7f] Add libfuse-dev to Build-Depends.
+
+ -- Michael Prokop <mika@debian.org>  Fri, 24 Jun 2011 23:42:33 +0200
+
 xmount (0.4.4-1) unstable; urgency=low
 
   * [7c86bed] Merge new upstream version 0.4.4.
