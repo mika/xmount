@@ -1,6 +1,9 @@
 This file lists the most important changes to the previous released version.
 For a full list of changes please refer to the source files.
 
+New for version 0.4.5:
+  - Show the name of the mounted file in mount output
+
 New for version 0.4.4:
   - Fixed a bug that prevents VirtualBox 3.2.8 or above from recognising the
     generated VDIs.
