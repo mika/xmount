@@ -1,5 +1,5 @@
 /*******************************************************************************
-* xmount Copyright (c) 2008,2009 by Gillen Daniel <gillen.dan@pinguin.lu>      *
+* xmount Copyright (c) 2008-2011 by Gillen Daniel <gillen.dan@pinguin.lu>      *
 *                                                                              *
 * xmount is a small tool to "fuse mount" various image formats as dd or vdi    *
 * files and enable virtual write access.                                       *
@@ -28,6 +28,13 @@
 #undef TRUE
 #define FALSE 0
 #define TRUE 1
+
+#ifndef __APPLE__
+  #define FOPEN fopen64
+#else
+  // Apple does use fopen for fopen64 too
+  #define FOPEN fopen
+#endif
 
 /*
  * Virtual image types

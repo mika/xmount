@@ -1,7 +1,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([xmount], [0.4.4], [bugs@pinguin.lu])
+AC_INIT([xmount], [0.4.5], [bugs@pinguin.lu])
 AM_INIT_AUTOMAKE(@PACKAGE_NAME@, @PACKAGE_VERSION@)
 AC_CONFIG_SRCDIR([xmount.c])
 AC_CONFIG_HEADER([config.h])
@@ -12,9 +12,9 @@ AM_PROG_CC_C_O
 
 # Checks for libraries.
 #AC_CHECK_LIB([fuse],[fuse_main],,AC_MSG_ERROR([No FUSE library found! Get it from http://fuse.sourceforge.net/]))
-AC_CHECK_LIB([crypto],[SHA1_Init],,AC_MSG_ERROR([No CRYPTO library found! Get it from http://www.openssl.org/]))
-#AC_CHECK_LIB([ewf],[libewf_open],,AC_MSG_WARN([No EWF library found! EWF input support will be disabled.]))
-#AC_CHECK_LIB([afflib],[af_open],,AC_MSG_WARN([No AFF library found! AFF input support will be disabled.]))
+#AC_CHECK_LIB([crypto],[SHA1_Init],,AC_MSG_ERROR([No CRYPTO library found! Get it from http://www.openssl.org/]))
+AC_CHECK_LIB([ewf],[libewf_open],,AC_MSG_WARN([No EWF library found! EWF input support will be disabled.]))
+AC_CHECK_LIB([afflib],[af_open],,AC_MSG_WARN([No AFF library found! AFF input support will be disabled.]))
 
 # Checks for header files.
 AC_CHECK_HEADER([stdio.h],,AC_MSG_ERROR([No stdio.h header file found!]))
@@ -29,8 +29,8 @@ AC_CHECK_HEADER([linux/fs.h],,AC_MSG_ERROR([No linux/fs.h header file found!]))
 AC_CHECK_HEADER([pthread.h],,AC_MSG_ERROR([No pthread.h header file found!]))
 #AC_CHECK_HEADER([fuse/fuse.h],,AC_MSG_WARN([No fuse.h header file found! This could be a false positive!]))
 PKG_CHECK_MODULES([fuse],[fuse])
-#AC_CHECK_HEADER([libewf.h],,AC_MSG_WARN([No libewf.h header file found! EWF input support will be disabled.]))
-#AC_CHECK_HEADER([afflib.h],,AC_MSG_WARN([No afflib.h header file found! AFF input support will be disabled.]))
+AC_CHECK_HEADER([libewf.h],,AC_MSG_WARN([No libewf.h header file found! EWF input support will be disabled.]))
+AC_CHECK_HEADER([afflib/afflib.h],,AC_MSG_WARN([No afflib.h header file found! AFF input support will be disabled.]))
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
