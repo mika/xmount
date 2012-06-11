@@ -1,8 +1,8 @@
 /*******************************************************************************
-* xmount Copyright (c) 2008-2011 by Gillen Daniel <gillen.dan@pinguin.lu>      *
+* xmount Copyright (c) 2008-2012 by Gillen Daniel <gillen.dan@pinguin.lu>      *
 *                                                                              *
-* xmount is a small tool to "fuse mount" various image formats as dd or vdi    *
-* files and enable virtual write access.                                       *
+* xmount is a small tool to "fuse mount" various image formats and enable      *
+* virtual write access.                                                        *
 *                                                                              *
 * This program is free software: you can redistribute it and/or modify it      *
 * under the terms of the GNU General Public License as published by the Free   *
@@ -37,17 +37,27 @@
 #endif
 
 /*
+ * Constants
+ */
+#define IMAGE_INFO_HEADER "The following values have been extracted from " \
+                          "the mounted image file:\n\n"
+
+/*
  * Virtual image types
  */
 typedef enum TVirtImageType {
   /** Virtual image is a DD file */
   TVirtImageType_DD,
+  /** Virtual image is a DMG file */
+  TVirtImageType_DMG,
   /** Virtual image is a VDI file */
   TVirtImageType_VDI,
   /** Virtual image is a VMDK file (IDE bus)*/
   TVirtImageType_VMDK,
   /** Virtual image is a VMDK file (SCSI bus)*/
-  TVirtImageType_VMDKS
+  TVirtImageType_VMDKS,
+  /** Virtual image is a VHD file*/
+  TVirtImageType_VHD
 } TVirtImageType;
 
 /*
@@ -96,6 +106,9 @@ typedef struct TXMountConfData {
 /*
  * VDI Binary File Header structure
  */
+#define VDI_FILE_COMMENT "<<< This is a virtual VDI image >>>"
+#define VDI_HEADER_COMMENT "This VDI was emulated using xmount v" \
+                           PACKAGE_VERSION
 #define VDI_IMAGE_SIGNATURE 0xBEDA107F // 1:1 copy from hp
 #define VDI_IMAGE_VERSION 0x00010001 // Vers 1.1
 #define VDI_IMAGE_TYPE_FIXED 0x00000002 // Type 2 (fixed size)
@@ -137,7 +150,7 @@ typedef struct TVdiFileHeader {
   uint32_t u32Dummy;
   /** Size of disk (in bytes). */
   uint64_t cbDisk;
-  /** Block size. (For instance VDI_IMAGE_BLOCK_SIZE.) Should be a power of 2! */
+  /** Block size. (For instance VDI_IMAGE_BLOCK_SIZE.) Must be a power of 2! */
   uint32_t cbBlock;
   /** Size of additional service information of every data block.
    * Prepended before block data. May be 0.
@@ -179,6 +192,58 @@ typedef struct TVdiFileHeader {
 //        uint8_t     u8ClockSeqLow;
 //        uint8_t     au8Node[6];
 //    } Gen;
+
+/*
+ * VHD Binary File footer structure
+ *
+ * At the time of writing, the specs could be found here:
+ *   http://www.microsoft.com/downloads/details.aspx?
+ *     FamilyID=C2D03242-2FFB-48EF-A211-F0C44741109E
+ *
+ * Warning: All values are big-endian!
+ */
+// 
+#ifdef __LP64__
+  #define VHD_IMAGE_HVAL_COOKIE 0x78697463656E6F63 // "conectix"
+#else
+  #define VHD_IMAGE_HVAL_COOKIE 0x78697463656E6F63LL 
+#endif
+#define VHD_IMAGE_HVAL_FEATURES 0x02000000
+#define VHD_IMAGE_HVAL_FILE_FORMAT_VERSION 0x00000100
+#ifdef __LP64__
+  #define VHD_IMAGE_HVAL_DATA_OFFSET 0xFFFFFFFFFFFFFFFF
+#else
+  #define VHD_IMAGE_HVAL_DATA_OFFSET 0xFFFFFFFFFFFFFFFFLL
+#endif
+#define VHD_IMAGE_HVAL_CREATOR_APPLICATION 0x746E6D78 // "xmnt"
+#define VHD_IMAGE_HVAL_CREATOR_VERSION 0x00000500
+// This one is funny! According to VHD specs, I can only choose between Windows
+// and Macintosh. I'm going to choose the most common one.
+#define VHD_IMAGE_HVAL_CREATOR_HOST_OS 0x6B326957 // "Win2k"
+#define VHD_IMAGE_HVAL_DISK_TYPE 0x02000000
+// Seconds from January 1st, 1970 to January 1st, 2000
+#define VHD_IMAGE_TIME_CONVERSION_OFFSET 0x386D97E0
+typedef struct TVhdFileHeader {
+  uint64_t cookie;
+  uint32_t features;
+  uint32_t file_format_version;
+  uint64_t data_offset;
+  uint32_t creation_time;
+  uint32_t creator_app;
+  uint32_t creator_ver;
+  uint32_t creator_os;
+  uint64_t size_original;
+  uint64_t size_current;
+  uint16_t disk_geometry_c;
+  uint8_t disk_geometry_h;
+  uint8_t disk_geometry_s;
+  uint32_t disk_type;
+  uint32_t checksum;
+  uint64_t uuid_l;
+  uint64_t uuid_h;
+  uint8_t saved_state;
+  char Reserved[427];
+} __attribute__ ((packed)) TVhdFileHeader, *pTVhdFileHeader;
 
 /*
  * Cache file block index array element
@@ -230,8 +295,14 @@ typedef struct TCacheFileHeader {
   uint64_t VmdkFileSize;
   /** Offset to cached VMDK file */
   uint64_t pVmdkFile;
+  
+  /** Set to 1 if VHD header is cached */
+  uint32_t VhdFileHeaderCached;
+  /** Offset to cached VHD header */
+  uint64_t pVhdFileHeader;
+  
   /** Padding until offset 512 to ease further additions */
-  char HeaderPadding[444];
+  char HeaderPadding[432];
 } __attribute__ ((packed)) TCacheFileHeader, *pTCacheFileHeader;
 
 // Old v1 header
@@ -256,6 +327,8 @@ typedef struct TCacheFileHeader_v1 {
  */
 #define LOG_ERROR(...) \
   LogMessage("ERROR",(char*)__FUNCTION__,__LINE__,__VA_ARGS__);
+#define LOG_WARNING(...) \
+  LogMessage("WARNING",(char*)__FUNCTION__,__LINE__,__VA_ARGS__);
 #define LOG_DEBUG(...) { \
   if(XMountConfData.Debug) \
     LogMessage("DEBUG",(char*)__FUNCTION__,__LINE__,__VA_ARGS__); \
@@ -302,6 +375,121 @@ typedef struct TCacheFileHeader_v1 {
 }
 
 /*
+ * Macros for endian conversions
+ */
+// First we need to have the bswap functions
+#if HAVE_BYTESWAP_H
+  #include <byteswap.h>
+#elif defined(HAVE_ENDIAN_H)
+  #include <endian.h>
+#elif defined(__APPLE__)
+  #include <libkern/OSByteOrder.h>
+  #define bswap_16 OSSwapInt16
+  #define bswap_32 OSSwapInt32
+  #define bswap_64 OSSwapInt64
+#else
+  #define	bswap_16(value) {                    \
+    ((((value) & 0xff) << 8) | ((value) >> 8)) \
+  }
+  #define	bswap_32(value)	{                                     \
+ 	  (((uint32_t)bswap_16((uint16_t)((value) & 0xffff)) << 16) | \
+ 	  (uint32_t)bswap_16((uint16_t)((value) >> 16)))              \
+ 	}
+  #define	bswap_64(value)	{                                         \
+ 	  (((uint64_t)bswap_32((uint32_t)((value) & 0xffffffff)) << 32) | \
+ 	  (uint64_t)bswap_32((uint32_t)((value) >> 32)))                  \
+ 	}
+#endif
+// Next we need to know what endianess is used
+#if defined(__LITTLE_ENDIAN__)
+  #define XMOUNT_BYTEORDER_LE
+#elif defined(__BIG_ENDIAN__)
+  #define XMOUNT_BYTEORDER_BE
+#elif defined(__BYTE_ORDER__)
+  #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    #define XMOUNT_BYTEORDER_LE
+  #else
+    #define XMOUNT_BYTEORDER_BE
+  #endif
+#endif
+// And finally we can define the macros
+#ifdef XMOUNT_BYTEORDER_LE
+  #ifndef be16toh
+    #define be16toh(x) bswap_16(x)
+  #endif
+  #ifndef htobe16
+    #define htobe16(x) bswap_16(x)
+  #endif
+  #ifndef be32toh
+    #define be32toh(x) bswap_32(x)
+  #endif
+  #ifndef htobe32
+    #define htobe32(x) bswap_32(x)
+  #endif
+  #ifndef be64toh
+    #define be64toh(x) bswap_64(x)
+  #endif
+  #ifndef htobe64
+    #define htobe64(x) bswap_64(x)
+  #endif
+  #ifndef le16toh
+    #define le16toh(x) (x)
+  #endif
+  #ifndef htole16
+    #define htole16(x) (x)
+  #endif
+  #ifndef le32toh
+    #define le32toh(x) (x)
+  #endif
+  #ifndef htole32
+    #define htole32(x) (x)
+  #endif
+  #ifndef le64toh
+    #define le64toh(x) (x)
+  #endif
+  #ifndef htole64
+    #define htole64(x) (x)
+  #endif
+#else
+  #ifndef be16toh
+    #define be16toh(x) (x)
+  #endif
+  #ifndef htobe16
+    #define htobe16(x) (x)
+  #endif
+  #ifndef be32toh
+    #define be32toh(x) (x)
+  #endif
+  #ifndef htobe32
+    #define htobe32(x) (x)
+  #endif
+  #ifndef be64toh
+    #define be64toh(x) (x)
+  #endif
+  #ifndef htobe64
+    #define htobe64(x) (x)
+  #endif
+  #ifndef le16toh
+    #define le16toh(x) bswap_16(x)
+  #endif
+  #ifndef htole16
+    #define htole16(x) bswap_16(x)
+  #endif
+  #ifndef le32toh
+    #define le32toh(x) bswap_32(x)
+  #endif
+  #ifndef htole32
+    #define htole32(x) bswap_32(x)
+  #endif
+  #ifndef le64toh
+    #define le64toh(x) bswap_64(x)
+  #endif
+  #ifndef htole64
+    #define htole64(x) bswap_64(x)
+  #endif
+#endif
+
+/*
   ----- Change history -----
   20090226: * Added change history information to this file.
             * Added TVirtImageType enum to identify virtual image type.
@@ -326,4 +514,8 @@ typedef struct TCacheFileHeader_v1 {
               XMOUNT_STRNAPP macros.
   20100324: * Added "__attribute__ ((packed))" to all header structs to prevent
               different sizes on i386 and amd64.
+  20111109: * Added TVirtImageType_DMG type.
+  20120130: * Added LOG_WARNING macro.
+  20120507: * Added TVhdFileHeader structure.
+  20120511: * Added endianess conversation macros
 */

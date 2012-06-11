@@ -12,6 +12,9 @@
 /* Define to 1 if you have the `afflib' library (-lafflib). */
 #undef HAVE_LIBAFFLIB
 
+/* Define to 1 if you have the `crypto' library (-lcrypto). */
+#undef HAVE_LIBCRYPTO
+
 /* Define to 1 if you have the `ewf' library (-lewf). */
 #undef HAVE_LIBEWF
 

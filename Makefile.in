@@ -721,7 +721,8 @@ uninstall-man: uninstall-man1
 	uninstall-man1
 
 # Link against the not installed static libaff and libewf
-#xmount_LDADD = libaff/lib/.libs/libafflib.a libewf/libewf/.libs/libewf.a -lstdc++
+#xmount_LDADD = libaff/lib/.libs/libafflib.a libewf/libewf/.libs/libewf.a /usr/lib/libssl.a /usr/lib/libcrypto.a -lstdc++ -lz
+#xmount_CFLAGS += -Ilibewf/include
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

@@ -1,6 +1,12 @@
 This file lists the most important changes to the previous released version.
 For a full list of changes please refer to the source files.
 
+New for version 0.5.0:
+  - Added support for VHD emulation.
+
+New for version 0.4.6:
+  - Added support for libewf v2
+
 New for version 0.4.5:
   - Show the name of the mounted file in mount output
 
