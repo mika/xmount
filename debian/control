@@ -9,7 +9,7 @@ Vcs-git: git://git.grml.org/xmount.git
 Vcs-Browser: http://git.grml.org/?p=xmount.git
 
 Package: xmount
-Architecture: any
+Architecture: linux-any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: tool to crossmount between multiple input and output harddisk images
  xmount allows you to convert on-the-fly between multiple input
