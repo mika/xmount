@@ -7,7 +7,8 @@ Table of contents
     2.1 Emulated DD file
     2.2 Emulated VDI file
     2.3 Emulated VMDK file
-    2.4 Virtual write access
+    2.4 Emulated VHD file
+    2.5 Virtual write access
   3.0 Installation instructions
     3.1 Prerequisits
     3.1 Install from a package
@@ -16,7 +17,7 @@ Table of contents
     4.1 xmount usage examples
 
 0.0 Author and license stuff
-  xmount Copyright (c) 2008, 2009 by Gillen Daniel <gillen.dan@pinguin.lu>
+  xmount Copyright (c) 2008-2012 by Gillen Daniel <gillen.dan@pinguin.lu>
 
   This program is free software: you can redistribute it and/or modify it under
   the terms of the GNU General Public License as published by the Free Software
@@ -42,11 +43,12 @@ Table of contents
   harddisk image types. xmount creates a virtual file system using FUSE
   (Filesystem in Userspace) that contains a virtual representation of the input
   image. The virtual representation can be in raw DD, VirtualBox's virtual disk
-  file format or in VmWare's VMDK file format. Input images can be raw DD, EWF
-  (Expert Witness Compression Format) or AFF (Advanced Forensic Format) files.
-  In addition, xmount also supports virtual write access to the output files
-  that is redirected to a cache file. This makes it possible to boot acquired
-  harddisk images using QEMU, KVM, VirtualBox, VmWare or alike.
+  file format, Microsoft's Virtual Hard Disk Image format or in VmWare's VMDK
+  file format. Input images can be raw DD, EWF (Expert Witness Compression
+  Format) or AFF (Advanced Forensic Format) files. In addition, xmount also
+  supports virtual write access to the output files that is redirected to a
+  cache file. This makes it possible to boot acquired harddisk images using
+  QEMU, KVM, VirtualBox, VmWare or alike.
 
 2.0 A deeper view of things
   2.1 Emulated DD file
@@ -73,7 +75,12 @@ Table of contents
     WARNING: VMDK support should be considered experimental and currently the
              VMDK descriptor file isn't cached.
 
-  2.4 Virtual write access
+  2.4 Emulated VHD file
+    When using the "--out vhd" command line parameter, a Virtual Hard Disk Image
+    file is emulated by appending to the raw data a valid VHD footer. Valid here
+    means as described in Microsoft's Virtual Hard Disk Image Format specs v1.
+
+  2.5 Virtual write access
     By using the "--cache <cache_file>" command line parameter, xmount allows
     you to change data in the emulated image files. All changes are written to a
     separate cache file. No data will ever be written to the original input
@@ -101,10 +108,10 @@ Table of contents
       To enable AFF input image support. Get it from http://www.afflib.org/
 
   3.2 Install from a package
-    Chances are I provide prebuild binary packages for Slackware, Debian and
-    Ubuntu. In this case, you only have to fire up your distribution's package
-    manager and install xmount. See https://www.pinguin.lu for more informations
-    and download links.
+    Chances are I provide prebuild binary packages for Debian / Ubuntu. In this
+    case, you only have to fire up your distribution's package manager and
+    install xmount. See https://www.pinguin.lu for more informations and
+    download links.
 
   3.3 Install from source
     After having checked the prerequisits, you should be able to compile and
@@ -127,7 +134,7 @@ Table of contents
     --cache <file> : Enable virtual write support and set cachefile to use.
     --in <itype> : Input image format. <itype> can be "dd", "ewf".
     --info : Print out some infos about used compiler and libraries.
-    --out <otype> : Output image format. <otype> can be "dd", "vdi", "vmdk(s)".
+    --out <otype> : Output image format. <otype> can be "dd", "vdi", "vhd", "vmdk(s)".
     --owcache <file> : Same as --cache <file> but overwrites existing cache.
     --rw <file> : Same as --cache <file>.
     --version : Same as --info.

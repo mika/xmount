@@ -1,5 +1,5 @@
 .\" 
-.TH "xmount" "1" "Sep 7, 2009" "Gillen Daniel" "xmount"
+.TH "xmount" "1" "May 9, 2012" "Gillen Daniel" "xmount"
 .SH "NAME"
 xmount \- Tool to crossmount between multiple input and output harddisk image files
 
@@ -14,11 +14,12 @@ allows you to convert on\-the\-fly between multiple input and output
 harddisk image types. xmount creates a virtual file system using FUSE
 (Filesystem in Userspace) that contains a virtual representation of the input
 image. The virtual representation can be in raw DD, VirtualBox's virtual disk
-file format or in VmWare's VMDK file format. Input images can be raw DD, EWF
-(Expert Witness Compression Format) or AFF (Advanced Forensic Format) files.
-In addition, xmount also supports virtual write access to the output files
-that is redirected to a cache file. This makes it possible to boot acquired
-harddisk images using QEMU, KVM, VirtualBox, VmWare or alike.
+file format, Microsoft's Virtual Hard Disk Image format or in VmWare's VMDK
+file format. Input images can be raw DD, EWF (Expert Witness Compression
+Format) or AFF (Advanced Forensic Format) files. In addition, xmount also
+supports virtual write access to the output files that is redirected to a
+cache file. This makes it possible to boot acquired harddisk images using
+QEMU, KVM, VirtualBox, VmWare or alike.
 .br 
 
 .SH "OPTIONS"
@@ -43,7 +44,7 @@ mopts: (Options specific to xmount)
   \-\-info :
     Print out some infos about used compiler and libraries.
   \-\-out <type> :
-    Specify output image type. Type can be "dd", "vdi", "vmdk(s)".
+    Specify output image type. Type can be "dd", "vdi", "vhd", "vmdk(s)".
   \-\-owcache <file> :
     Same as \-\-cache <file> but overwrites existing cache.
   \-\-rw <cache_file> :
