@@ -30,35 +30,28 @@ config.status: configure
 	./configure --host=$(DEB_HOST_GNU_TYPE) --build=$(DEB_BUILD_GNU_TYPE) --prefix=/usr --mandir=\$${prefix}/share/man --infodir=\$${prefix}/share/info CFLAGS="$(CFLAGS)" LDFLAGS="-Wl,-z,defs"
 
 
-build: build-stamp
-
+build: build-arch build-indep
+build-arch: build-stamp
+build-indep: build-stamp
 build-stamp:  config.status
 	dh_testdir
-
-	# Add here commands to compile the package.
 	$(MAKE)
-
 	touch $@
 
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp 
-
-	# Add here commands to clean up after the build process.
+	rm -f build-stamp
 	[ ! -f Makefile ] || $(MAKE) distclean
 
-	dh_clean 
+	dh_clean
 
 install: build
 	dh_testdir
 	dh_testroot
-	dh_clean -k 
+	dh_clean -k
 	dh_installdirs usr/bin
-
-	# Add here commands to install the package into debian/xmount.
 	$(MAKE) DESTDIR=$(CURDIR)/debian/xmount install
-
 
 # Build architecture-independent files here.
 binary-indep: build install
@@ -83,4 +76,4 @@ binary-arch: build install
 	dh_builddeb
 
 binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install 
+.PHONY: build clean binary-indep binary-arch binary install
