@@ -1,3 +1,13 @@
+xmount (0.5.0-2) unstable; urgency=low
+
+  * [3d6c4cd] Switch to debhelper7 minimal style and adjust
+    Build-Depends and compat version accordingly
+  * [5402096] Use Architecture: linux-any due to linux/fs.h being
+    linux-only. Thanks to Ulrich Dangel + Axel Beckert for
+    help in verification
+
+ -- Michael Prokop <mika@debian.org>  Tue, 12 Jun 2012 00:24:19 +0200
+
 xmount (0.5.0-1) unstable; urgency=low
 
   * [1db6447] Merging upstream version 0.5.0
