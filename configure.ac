@@ -13,7 +13,7 @@ AM_PROG_CC_C_O
 # Checks for libraries.
 ##AC_CHECK_LIB([fuse],[fuse_main],,AC_MSG_ERROR([No FUSE library found! Get it from http://fuse.sourceforge.net/]))
 #AC_CHECK_LIB([crypto],[SHA1_Init],,AC_MSG_ERROR([No CRYPTO library found! Get it from http://www.openssl.org/]))
-AC_CHECK_LIB([ewf],[libewf_open],,AC_MSG_WARN([No EWF library found! EWF input support will be disabled.]))
+AC_CHECK_LIB([ewf],[libewf_handle_open],,AC_MSG_WARN([No EWF library found! EWF input support will be disabled.]))
 AC_CHECK_LIB([afflib],[af_open],,AC_MSG_WARN([No AFF library found! AFF input support will be disabled.]))
 
 # Checks for header files.
