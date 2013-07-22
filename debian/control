@@ -3,7 +3,7 @@ Section: admin
 Priority: optional
 Maintainer: Michael Prokop <mika@debian.org>
 Build-Depends: debhelper (>= 8), automake (>= 1.10), autoconf (>= 2.13), libfuse-dev (>= 2.7.1-2~bpo40+1), libewf-dev (>= 20080501), libgnutls-dev, libafflib-dev, pkg-config
-Standards-Version: 3.9.3
+Standards-Version: 3.9.4
 Homepage: https://www.pinguin.lu/
 Vcs-git: git://git.grml.org/xmount.git
 Vcs-Browser: http://git.grml.org/?p=xmount.git
