@@ -1,3 +1,11 @@
+xmount (0.5.0-3) unstable; urgency=low
+
+  * [cc92503] Adjust configure* for new libewf version 20130416-2
+  * [4d80734] Bump Standards-Version to 3.9.4
+  * [c725434] Add libbfio-dev to Build-Depends
+
+ -- Michael Prokop <mika@debian.org>  Mon, 22 Jul 2013 14:07:06 +0200
+
 xmount (0.5.0-2) unstable; urgency=low
 
   * [3d6c4cd] Switch to debhelper7 minimal style and adjust
